@@ -1,0 +1,6 @@
+{
+  "name": "AutoBill & Smart Khata",
+  "description": "Smart invoicing, delivery challan generator, and digital khata ledger for auto vehicle dealers (2W, 4W, EV) and retail businesses.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
