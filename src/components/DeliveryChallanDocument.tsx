@@ -1,16 +1,39 @@
 import React from 'react';
 import { SavedInvoice } from '../types';
 import { formatINR } from '../utils/numberToWords';
-import { ShieldAlert, CheckSquare, Zap, Clock, Key } from 'lucide-react';
+import {
+  ShieldAlert,
+  CheckSquare,
+  Zap,
+  Clock,
+  Key,
+  Printer,
+  Download,
+  MessageCircle,
+  QrCode,
+  Loader2,
+} from 'lucide-react';
 
 interface DeliveryChallanDocumentProps {
   invoice: SavedInvoice;
   id?: string;
+  hasWatermark?: boolean;
+  onPrint?: () => void;
+  onDownloadPDF?: () => void;
+  onOpenWhatsApp?: () => void;
+  onOpenQR?: () => void;
+  isPdfGenerating?: boolean;
 }
 
 export const DeliveryChallanDocument: React.FC<DeliveryChallanDocumentProps> = ({
   invoice,
   id = 'printable-challan-document',
+  hasWatermark = false,
+  onPrint,
+  onDownloadPDF,
+  onOpenWhatsApp,
+  onOpenQR,
+  isPdfGenerating = false,
 }) => {
   const profile = invoice.businessProfile;
   const isAuto = invoice.mode === 'auto_dealer' && invoice.autoData;
@@ -35,6 +58,78 @@ export const DeliveryChallanDocument: React.FC<DeliveryChallanDocumentProps> = (
       className="printable-document bg-white text-slate-900 p-6 sm:p-8 rounded-xl shadow-lg border border-slate-200 text-xs leading-relaxed max-w-[850px] mx-auto transition-all"
       style={{ minHeight: '1100px' }}
     >
+      {/* Quick Action Toolbar (Visible on screen, Hidden in Print) */}
+      {(onPrint || onDownloadPDF || onOpenWhatsApp || onOpenQR) && (
+        <div className="no-print mb-6 p-3 bg-slate-900 text-white rounded-xl flex flex-wrap items-center justify-between gap-2 shadow-xs">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-amber-400" />
+            <span className="font-bold text-xs uppercase tracking-wide">
+              Vehicle Delivery Challan &amp; Agreement
+            </span>
+            <span className="text-slate-400 text-[11px] font-mono">#DC-{invoice.invoiceNo}</span>
+          </div>
+
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {onPrint && (
+              <button
+                type="button"
+                onClick={onPrint}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-slate-900 hover:bg-slate-100 font-bold rounded-lg text-xs transition-colors cursor-pointer"
+                title="Print this challan directly"
+              >
+                <Printer className="w-3.5 h-3.5 text-slate-700" />
+                <span>Print Challan</span>
+              </button>
+            )}
+
+            {onDownloadPDF && (
+              <button
+                type="button"
+                onClick={onDownloadPDF}
+                disabled={isPdfGenerating}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold rounded-lg text-xs transition-colors cursor-pointer disabled:opacity-50"
+                title="Download A4 PDF format"
+              >
+                {isPdfGenerating ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>PDF...</span>
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-3.5 h-3.5 text-slate-950" />
+                    <span>Download PDF</span>
+                  </>
+                )}
+              </button>
+            )}
+
+            {onOpenWhatsApp && (
+              <button
+                type="button"
+                onClick={onOpenWhatsApp}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs transition-colors cursor-pointer"
+                title="Send handover note on WhatsApp"
+              >
+                <MessageCircle className="w-3.5 h-3.5" />
+                <span>WhatsApp</span>
+              </button>
+            )}
+
+            {onOpenQR && profile.upiId && (
+              <button
+                type="button"
+                onClick={onOpenQR}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-lg text-xs transition-colors cursor-pointer border border-slate-700"
+                title="Open counter QR for customer"
+              >
+                <QrCode className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Show UPI QR</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       {/* 1. Official Header */}
       <div className="flex justify-between items-start border-b-2 border-slate-900 pb-4 mb-5 gap-4">
         <div>
@@ -188,7 +283,7 @@ export const DeliveryChallanDocument: React.FC<DeliveryChallanDocumentProps> = (
       </div>
 
       {/* 5. Auto-Generated Legal Clauses & Indemnity Agreement */}
-      <div className="border-2 border-slate-300 rounded-lg p-4 bg-slate-50/80 mb-5">
+      <div className="border-2 border-slate-300 rounded-lg p-4 bg-slate-50/80 mb-5 avoid-break page-break-avoid">
         <div className="flex items-center gap-2 mb-2 font-bold text-xs text-slate-900 uppercase tracking-wide">
           <ShieldAlert className="w-4 h-4 text-amber-600" />
           <span>Statutory Handover Undertaking &amp; Legal Indemnity Declaration</span>
@@ -212,13 +307,13 @@ export const DeliveryChallanDocument: React.FC<DeliveryChallanDocumentProps> = (
           </p>
 
           <p>
-            <strong>5. Settlement of Consideration:</strong> Total sale consideration is <strong>{formatINR(p.totalSaleValue)}</strong>. Amount received to date is <strong>{formatINR(p.advanceReceived)}</strong>. Outstanding balance of <strong>{formatINR(p.balanceAmount)}</strong> shall be paid by the buyer on or before <strong>{p.balanceDueDate || invoice.deliveryDate}</strong>.
+            <strong>5. Settlement of Consideration:</strong> Total sale consideration is <strong>{formatINR(p?.totalSaleValue || 0)}</strong>. Amount received to date is <strong>{formatINR(p?.advanceReceived || 0)}</strong>. Outstanding balance of <strong>{formatINR(p?.balanceAmount || 0)}</strong> shall be paid by the buyer on or before <strong>{p?.balanceDueDate || invoice.deliveryDate || 'Handover'}</strong>.
           </p>
         </div>
       </div>
 
       {/* 6. Signature & Acceptance Block */}
-      <div className="grid grid-cols-2 gap-8 pt-6 border-t-2 border-slate-300 text-center">
+      <div className="grid grid-cols-2 gap-8 pt-6 border-t-2 border-slate-300 text-center avoid-break page-break-avoid">
         {/* Buyer Signature */}
         <div className="space-y-1">
           <div className="h-14 flex items-end justify-center">
@@ -244,7 +339,18 @@ export const DeliveryChallanDocument: React.FC<DeliveryChallanDocumentProps> = (
         </div>
       </div>
 
-      <div className="text-center text-[9px] text-slate-400 mt-6 pt-2 border-t border-slate-100">
+      {/* Watermark for Free Tier */}
+      {hasWatermark && (
+        <div className="mt-4 pt-2 border-t border-slate-200 text-center avoid-break page-break-avoid">
+          <div className="inline-flex items-center gap-2 px-3 py-1 bg-slate-50 text-slate-500 border border-slate-200 rounded-full text-[10px] font-semibold">
+            <span>⚡ Powered by BahiKhata</span>
+            <span className="text-slate-300">&bull;</span>
+            <span className="text-amber-700">Free Tier</span>
+          </div>
+        </div>
+      )}
+
+      <div className="text-center text-[9px] text-slate-400 mt-4 pt-2 border-t border-slate-100">
         Generated legally under Motor Vehicles Rules &bull; AutoBill &amp; Smart Khata Platform.
       </div>
     </div>

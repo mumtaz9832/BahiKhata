@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { BusinessProfile } from '../types';
-import { X, Building2, CreditCard, ShieldCheck, Check } from 'lucide-react';
+import { X, Building2, CreditCard, ShieldCheck, Check, Trash2 } from 'lucide-react';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   profile: BusinessProfile;
   onSave: (updated: BusinessProfile) => void;
+  onClearAllData?: () => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -14,6 +15,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
   profile,
   onSave,
+  onClearAllData,
 }) => {
   if (!isOpen) return null;
 
@@ -256,28 +258,45 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           </div>
 
-          <div className="flex justify-end gap-3 pt-3 border-t border-slate-200">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 cursor-pointer"
-            >
-              Cancel
-            </button>
+          <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-200">
+            {onClearAllData ? (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onClearAllData();
+                }}
+                className="px-3 py-2 text-xs font-bold text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1.5"
+                title="Wipe mock and false data"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete All Records &amp; Reset</span>
+              </button>
+            ) : <div />}
 
-            <button
-              type="submit"
-              className="px-5 py-2 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-sm flex items-center gap-1.5 cursor-pointer"
-            >
-              {savedSuccess ? (
-                <>
-                  <Check className="w-4 h-4 text-emerald-400" />
-                  <span>Saved!</span>
-                </>
-              ) : (
-                <span>Save Dealership Profile</span>
-              )}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 cursor-pointer"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="submit"
+                className="px-5 py-2 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-sm flex items-center gap-1.5 cursor-pointer"
+              >
+                {savedSuccess ? (
+                  <>
+                    <Check className="w-4 h-4 text-emerald-400" />
+                    <span>Saved!</span>
+                  </>
+                ) : (
+                  <span>Save Dealership Profile</span>
+                )}
+              </button>
+            </div>
           </div>
         </form>
       </div>

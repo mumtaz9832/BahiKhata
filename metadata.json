@@ -1,6 +1,8 @@
 {
-  "name": "AutoBill & Smart Khata",
-  "description": "Smart invoicing, delivery challan generator, and digital khata ledger for auto vehicle dealers (2W, 4W, EV) and retail businesses.",
+  "name": "Vyapar & Zoho Books Suite",
+  "description": "GST billing, party khata ledger, stock inventory, delivery challans, and day book reports for auto dealerships and retail businesses.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

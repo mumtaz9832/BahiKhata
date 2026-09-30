@@ -1,197 +1,275 @@
-import { BusinessProfile, SavedInvoice, AutoDealerData, RetailData, PaymentRecord } from '../types';
+import {
+  BusinessProfile,
+  SavedInvoice,
+  PaymentRecord,
+  SubscriptionState,
+  AppLanguage,
+  CustomerRecord,
+  ProductRecord,
+} from '../types';
 
-const STORAGE_KEY_INVOICES = 'autobill_invoices_v1';
-const STORAGE_KEY_PROFILE = 'autobill_business_profile_v1';
-const STORAGE_KEY_SETTINGS = 'autobill_settings_v1';
+const STORAGE_KEY_INVOICES = 'bahikhata_invoices_v2';
+const STORAGE_KEY_PROFILE = 'bahikhata_business_profile_v2';
+const STORAGE_KEY_SUBSCRIPTION = 'bahikhata_subscription_v2';
+const STORAGE_KEY_LANGUAGE = 'bahikhata_lang_v2';
+const STORAGE_KEY_CUSTOMERS = 'bahikhata_customers_v2';
+const STORAGE_KEY_PRODUCTS = 'bahikhata_products_v2';
+
+const IDB_NAME = 'BahiKhata_DB';
+const IDB_VERSION = 1;
+const IDB_STORE = 'keyval_store';
 
 export const DEFAULT_BUSINESS_PROFILE: BusinessProfile = {
-  name: 'Apex Motors & EV Hub',
-  tagline: 'Authorized Multi-Brand 2W, 4W & Electric Vehicle Dealership',
-  address: 'Plot 42, Auto Nagar, Bypass Road',
-  city: 'Pune',
-  state: 'Maharashtra',
-  pincode: '411038',
-  phone: '+91 98765 43210',
-  altPhone: '+91 87654 32109',
-  email: 'sales@apexmotorsev.com',
-  gstin: '27AABCU9603R1ZM',
-  dealerCode: 'APX-PUN-094',
-  upiId: 'apexmotors@upi',
-  bankName: 'HDFC Bank Ltd',
-  accountNumber: '50200034891234',
-  ifscCode: 'HDFC0001234',
-  accountHolder: 'Apex Motors & EV Hub Pvt Ltd',
+  name: 'Vyapar & Zoho Books Dealership',
+  tagline: 'GST Invoicing, Delivery Challans, Customer Khata & Stock Inventory',
+  address: '',
+  city: '',
+  state: '',
+  pincode: '',
+  phone: '',
+  altPhone: '',
+  email: '',
+  gstin: '',
+  dealerCode: '',
+  upiId: '',
+  bankName: '',
+  accountNumber: '',
+  ifscCode: '',
+  accountHolder: '',
   terms: [
-    'Subject to Pune jurisdiction only.',
+    'Subject to local jurisdiction only.',
     'Delivery will be given only against receipt of 100% realized payment.',
-    'RTO registration & road tax is subject to respective state government statutory norms.',
-    'Vehicle manufacturer warranty rules apply. No dealer warranty on electrical parts unless explicitly stated.',
-    'Traffic challans and third-party liabilities post-handover are strictly the buyer’s responsibility.',
+    'Warranty and statutory terms as applicable by the manufacturer.',
+    'All statutory taxes and fees are as per government norms.',
   ],
 };
 
-export const INITIAL_DEMO_INVOICES: SavedInvoice[] = [
-  {
-    id: 'inv_demo_001',
-    invoiceNo: 'APX-2026-0042',
-    invoiceDate: '2026-09-28',
-    deliveryDate: '2026-09-28',
-    deliveryTime: '04:30 PM',
-    mode: 'auto_dealer',
-    status: 'PARTIAL',
-    businessProfile: DEFAULT_BUSINESS_PROFILE,
-    autoData: {
-      buyer: {
-        fullName: 'Rahul Sharma',
-        phone: '+91 98220 12345',
-        altPhone: '+91 94220 54321',
-        idType: 'Aadhaar Card',
-        idNumber: '4829-9182-3741',
-        address: 'Flat 402, Green Acres Society, Baner',
-        city: 'Pune',
-        state: 'Maharashtra',
-        pincode: '411045',
-      },
-      vehicle: {
-        vehicleType: 'electric_vehicle',
-        make: 'Ola Electric',
-        model: 'Ola S1 Pro Gen 2',
-        variant: '4 kWh Matte Black',
-        registrationNo: 'MH12 VK 8821',
-        chassisNo: 'MD9XX4KWH26B88192',
-        engineMotorNo: 'EM-OLA-2026-9932',
-        manufacturingYear: 2026,
-        color: 'Matte Stellar Black',
-        odometerKm: 12,
-        fuelType: 'Electric',
-        batteryCapacityKwh: '4.0 kWh (IP67)',
-        chargerSerialNo: 'CHG-750W-992014',
-        batteryWarrantyYears: '8 Years / 80,000 KM',
-        motorPowerKw: '11 kW Peak (8.5 kW Nominal)',
-        hypothecationBank: 'IDFC First Bank Two-Wheeler Loan',
-      },
-      pricing: {
-        basePrice: 139999,
-        rtoCharges: 3500,
-        insuranceCharges: 6200,
-        accessoriesCharges: 2500,
-        discount: 4000,
-        totalSaleValue: 148199,
-        advanceReceived: 100000,
-        balanceAmount: 48199,
-        paymentMode: 'UPI / QR',
-        transactionRef: 'UPI/628919283741',
-        balanceDueDate: '2026-10-05',
-        notes: 'Includes helmet, floor mat, and 750W home fast charger.',
-      },
-    },
-    paymentHistory: [
-      {
-        id: 'pay_1',
-        date: '2026-09-28',
-        amount: 100000,
-        mode: 'UPI / QR',
-        reference: 'UPI/628919283741',
-        note: 'Advance Token received via Google Pay',
-      },
-    ],
-    createdAt: '2026-09-28T11:00:00Z',
-    updatedAt: '2026-09-28T11:00:00Z',
-  },
-  {
-    id: 'inv_demo_002',
-    invoiceNo: 'APX-2026-0041',
-    invoiceDate: '2026-09-27',
-    deliveryDate: '2026-09-27',
-    deliveryTime: '02:15 PM',
-    mode: 'auto_dealer',
-    status: 'PAID',
-    businessProfile: DEFAULT_BUSINESS_PROFILE,
-    autoData: {
-      buyer: {
-        fullName: 'Vikram Joshi',
-        phone: '+91 97654 11223',
-        idType: 'Aadhaar Card',
-        idNumber: '3214-7890-4561',
-        address: 'B-12, Sai Krupa Colony, Kothrud',
-        city: 'Pune',
-        state: 'Maharashtra',
-        pincode: '411038',
-      },
-      vehicle: {
-        vehicleType: 'two_wheeler',
-        make: 'Hero MotoCorp',
-        model: 'Splendor Plus XTEC',
-        variant: 'i3S Drum Cast',
-        registrationNo: 'MH12 UZ 4590',
-        chassisNo: 'MBLHA10ENR890123',
-        engineMotorNo: 'HA10EN890123',
-        manufacturingYear: 2026,
-        color: 'Black with Silver Graphics',
-        odometerKm: 6,
-        fuelType: 'Petrol',
-      },
-      pricing: {
-        basePrice: 79900,
-        rtoCharges: 7200,
-        insuranceCharges: 5400,
-        accessoriesCharges: 1800,
-        discount: 2000,
-        totalSaleValue: 92300,
-        advanceReceived: 92300,
-        balanceAmount: 0,
-        paymentMode: 'Bank Transfer (NEFT/IMPS)',
-        transactionRef: 'NEFT-HDFC-991283',
-        balanceDueDate: '2026-09-27',
-        notes: 'Full payment realized before delivery. RC smartcard receipt given.',
-      },
-    },
-    paymentHistory: [
-      {
-        id: 'pay_2',
-        date: '2026-09-27',
-        amount: 92300,
-        mode: 'Bank Transfer (NEFT/IMPS)',
-        reference: 'NEFT-HDFC-991283',
-        note: 'Full settlement',
-      },
-    ],
-    createdAt: '2026-09-27T08:30:00Z',
-    updatedAt: '2026-09-27T08:30:00Z',
-  },
-];
+export const INITIAL_DEMO_INVOICES: SavedInvoice[] = [];
 
-export function getBusinessProfile(): BusinessProfile {
+export const INITIAL_DEMO_CUSTOMERS: CustomerRecord[] = [];
+
+export const INITIAL_DEMO_PRODUCTS: ProductRecord[] = [];
+
+// --- IndexedDB Low-level Helpers ---
+function openDatabase(): Promise<IDBDatabase | null> {
+  if (typeof window === 'undefined' || !window.indexedDB) {
+    return Promise.resolve(null);
+  }
+  return new Promise((resolve) => {
+    try {
+      const request = window.indexedDB.open(IDB_NAME, IDB_VERSION);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains(IDB_STORE)) {
+          db.createObjectStore(IDB_STORE);
+        }
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+async function idbGet<T>(key: string): Promise<T | null> {
+  const db = await openDatabase();
+  if (!db) return null;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(IDB_STORE, 'readonly');
+      const store = tx.objectStore(IDB_STORE);
+      const req = store.get(key);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+async function idbSet<T>(key: string, val: T): Promise<void> {
+  const db = await openDatabase();
+  if (!db) return;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY_PROFILE);
-    if (!raw) return DEFAULT_BUSINESS_PROFILE;
-    return { ...DEFAULT_BUSINESS_PROFILE, ...JSON.parse(raw) };
-  } catch {
-    return DEFAULT_BUSINESS_PROFILE;
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    const store = tx.objectStore(IDB_STORE);
+    store.put(val, key);
+  } catch (err) {
+    console.warn('IDB write failed:', err);
   }
 }
 
+// In-Memory Synchronous Caches
+let memoryInvoices: SavedInvoice[] | null = null;
+let memoryProfile: BusinessProfile | null = null;
+let memorySubscription: SubscriptionState | null = null;
+let memoryLanguage: AppLanguage | null = null;
+let memoryCustomers: CustomerRecord[] | null = null;
+let memoryProducts: ProductRecord[] | null = null;
+
+
+export function getLanguagePreference(): AppLanguage {
+  if (memoryLanguage) return memoryLanguage;
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY_LANGUAGE);
+    if (stored === 'hi' || stored === 'en') {
+      memoryLanguage = stored;
+      return stored;
+    }
+  } catch {}
+  return 'en';
+}
+
+export function saveLanguagePreference(lang: AppLanguage): void {
+  memoryLanguage = lang;
+  try {
+    localStorage.setItem(STORAGE_KEY_LANGUAGE, lang);
+    idbSet(STORAGE_KEY_LANGUAGE, lang);
+  } catch {}
+}
+
+export function getCurrentMonthKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+export function getSubscriptionState(): SubscriptionState {
+  const currentMonth = getCurrentMonthKey();
+  const defaultSub: SubscriptionState = {
+    tier: 'free',
+    invoiceCountThisMonth: 0,
+    monthKey: currentMonth,
+    hasWatermark: true,
+    canUploadCustomLogo: false,
+    unlimitedInvoices: false,
+  };
+
+  if (memorySubscription) {
+    if (memorySubscription.monthKey !== currentMonth) {
+      memorySubscription.invoiceCountThisMonth = 0;
+      memorySubscription.monthKey = currentMonth;
+      saveSubscriptionState(memorySubscription);
+    }
+    return memorySubscription;
+  }
+
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_SUBSCRIPTION);
+    if (raw) {
+      const parsed = JSON.parse(raw) as SubscriptionState;
+      if (parsed.monthKey !== currentMonth) {
+        parsed.invoiceCountThisMonth = 0;
+        parsed.monthKey = currentMonth;
+      }
+      memorySubscription = parsed;
+      return parsed;
+    }
+  } catch {}
+
+  memorySubscription = defaultSub;
+  return defaultSub;
+}
+
+export function saveSubscriptionState(sub: SubscriptionState): void {
+  memorySubscription = sub;
+  try {
+    localStorage.setItem(STORAGE_KEY_SUBSCRIPTION, JSON.stringify(sub));
+    idbSet(STORAGE_KEY_SUBSCRIPTION, sub);
+  } catch (err) {
+    console.error('Error saving subscription:', err);
+  }
+}
+
+export function incrementMonthlyInvoiceCount(): { allowed: boolean; remaining: number } {
+  const sub = getSubscriptionState();
+  if (sub.tier !== 'free') {
+    sub.invoiceCountThisMonth += 1;
+    saveSubscriptionState(sub);
+    return { allowed: true, remaining: Infinity };
+  }
+
+  const FREE_MONTHLY_LIMIT = 5;
+  if (sub.invoiceCountThisMonth >= FREE_MONTHLY_LIMIT) {
+    return { allowed: false, remaining: 0 };
+  }
+
+  sub.invoiceCountThisMonth += 1;
+  saveSubscriptionState(sub);
+  return {
+    allowed: true,
+    remaining: Math.max(0, FREE_MONTHLY_LIMIT - sub.invoiceCountThisMonth),
+  };
+}
+
+export function getBusinessProfile(): BusinessProfile {
+  if (memoryProfile) return memoryProfile;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_PROFILE);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      // If user had previous hardcoded demo business details, strip false data
+      if (
+        parsed.gstin === '27AABCU9603R1ZM' ||
+        parsed.phone === '+91 98765 43210' ||
+        parsed.name === 'Apex Motors & EV Hub'
+      ) {
+        const cleaned: BusinessProfile = {
+          ...DEFAULT_BUSINESS_PROFILE,
+          name: parsed.name === 'Apex Motors & EV Hub' ? DEFAULT_BUSINESS_PROFILE.name : parsed.name,
+        };
+        memoryProfile = cleaned;
+        saveBusinessProfile(cleaned);
+        return cleaned;
+      }
+      memoryProfile = { ...DEFAULT_BUSINESS_PROFILE, ...parsed };
+      return memoryProfile!;
+    }
+  } catch {}
+
+  memoryProfile = DEFAULT_BUSINESS_PROFILE;
+  return DEFAULT_BUSINESS_PROFILE;
+}
+
 export function saveBusinessProfile(profile: BusinessProfile): void {
+  memoryProfile = profile;
   try {
     localStorage.setItem(STORAGE_KEY_PROFILE, JSON.stringify(profile));
+    idbSet(STORAGE_KEY_PROFILE, profile);
   } catch (err) {
     console.error('Error saving business profile:', err);
   }
 }
 
 export function getSavedInvoices(): SavedInvoice[] {
+  if (memoryInvoices) return memoryInvoices;
+
   try {
     const raw = localStorage.getItem(STORAGE_KEY_INVOICES);
-    if (!raw) {
-      // Seed with initial demo invoices
-      localStorage.setItem(STORAGE_KEY_INVOICES, JSON.stringify(INITIAL_DEMO_INVOICES));
-      return INITIAL_DEMO_INVOICES;
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        // Strip out any false demo invoices
+        const cleaned = parsed.filter(
+          (inv) =>
+            !inv.id.startsWith('inv_demo_') &&
+            inv.invoiceNo !== 'APX-2026-0042' &&
+            inv.invoiceNo !== 'APX-2026-0041' &&
+            inv.autoData?.buyer.fullName !== 'Rahul Sharma' &&
+            inv.autoData?.buyer.fullName !== 'Vikram Joshi'
+        );
+        memoryInvoices = cleaned;
+        if (cleaned.length !== parsed.length) {
+          localStorage.setItem(STORAGE_KEY_INVOICES, JSON.stringify(cleaned));
+          idbSet(STORAGE_KEY_INVOICES, cleaned);
+        }
+        return cleaned;
+      }
     }
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : INITIAL_DEMO_INVOICES;
-  } catch {
-    return INITIAL_DEMO_INVOICES;
-  }
+  } catch {}
+
+  memoryInvoices = [];
+  return [];
 }
 
 export function saveInvoice(invoice: SavedInvoice): SavedInvoice[] {
@@ -205,7 +283,9 @@ export function saveInvoice(invoice: SavedInvoice): SavedInvoice[] {
     } else {
       updated = [invoice, ...all];
     }
+    memoryInvoices = updated;
     localStorage.setItem(STORAGE_KEY_INVOICES, JSON.stringify(updated));
+    idbSet(STORAGE_KEY_INVOICES, updated);
     return updated;
   } catch (err) {
     console.error('Error saving invoice:', err);
@@ -217,7 +297,9 @@ export function deleteInvoice(id: string): SavedInvoice[] {
   try {
     const all = getSavedInvoices();
     const updated = all.filter((item) => item.id !== id);
+    memoryInvoices = updated;
     localStorage.setItem(STORAGE_KEY_INVOICES, JSON.stringify(updated));
+    idbSet(STORAGE_KEY_INVOICES, updated);
     return updated;
   } catch (err) {
     console.error('Error deleting invoice:', err);
@@ -244,7 +326,8 @@ export function recordInvoicePayment(
 
     if (target.mode === 'auto_dealer' && target.autoData) {
       newAdvance = (target.autoData.pricing.advanceReceived || 0) + payment.amount;
-      newBalance = Math.max(0, target.autoData.pricing.totalSaleValue - newAdvance);
+      const payable = target.autoData.pricing.netPayableAmount || target.autoData.pricing.totalSaleValue;
+      newBalance = Math.max(0, payable - newAdvance);
       target.autoData.pricing.advanceReceived = newAdvance;
       target.autoData.pricing.balanceAmount = newBalance;
     } else if (target.mode === 'general_retail' && target.retailData) {
@@ -269,14 +352,168 @@ export function recordInvoicePayment(
 export function generateNextInvoiceNo(): string {
   const all = getSavedInvoices();
   const year = new Date().getFullYear();
-  const count = all.length + 43; // realistic offset
-  return `APX-${year}-${String(count).padStart(4, '0')}`;
+  const count = all.length + 1;
+  return `INV-${year}-${String(count).padStart(4, '0')}`;
+}
+
+export function getSavedCustomers(): CustomerRecord[] {
+  if (memoryCustomers) return memoryCustomers;
+
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_CUSTOMERS);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        // Strip out false demo customers
+        const cleaned = parsed.filter(
+          (c) =>
+            !c.id.startsWith('cust_00') &&
+            c.fullName !== 'Rahul Sharma' &&
+            c.fullName !== 'Vikram Joshi'
+        );
+        memoryCustomers = cleaned;
+        if (cleaned.length !== parsed.length) {
+          localStorage.setItem(STORAGE_KEY_CUSTOMERS, JSON.stringify(cleaned));
+          idbSet(STORAGE_KEY_CUSTOMERS, cleaned);
+        }
+        return cleaned;
+      }
+    }
+  } catch {}
+
+  memoryCustomers = [];
+  return [];
+}
+
+export function saveCustomer(customer: CustomerRecord): CustomerRecord[] {
+  try {
+    const all = getSavedCustomers();
+    const index = all.findIndex((c) => c.id === customer.id);
+    let updated: CustomerRecord[];
+    if (index >= 0) {
+      updated = [...all];
+      updated[index] = customer;
+    } else {
+      updated = [customer, ...all];
+    }
+    memoryCustomers = updated;
+    localStorage.setItem(STORAGE_KEY_CUSTOMERS, JSON.stringify(updated));
+    idbSet(STORAGE_KEY_CUSTOMERS, updated);
+    return updated;
+  } catch (err) {
+    console.error('Error saving customer:', err);
+    return getSavedCustomers();
+  }
+}
+
+export function deleteCustomer(id: string): CustomerRecord[] {
+  try {
+    const all = getSavedCustomers();
+    const updated = all.filter((c) => c.id !== id);
+    memoryCustomers = updated;
+    localStorage.setItem(STORAGE_KEY_CUSTOMERS, JSON.stringify(updated));
+    idbSet(STORAGE_KEY_CUSTOMERS, updated);
+    return updated;
+  } catch (err) {
+    console.error('Error deleting customer:', err);
+    return getSavedCustomers();
+  }
+}
+
+export function getSavedProducts(): ProductRecord[] {
+  if (memoryProducts) return memoryProducts;
+
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_PRODUCTS);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        // Strip out false demo products
+        const cleaned = parsed.filter(
+          (p) =>
+            !p.id.startsWith('prod_00') &&
+            !p.name.includes('Ola S1 Pro Gen 2') &&
+            !p.name.includes('Splendor Plus')
+        );
+        memoryProducts = cleaned;
+        if (cleaned.length !== parsed.length) {
+          localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(cleaned));
+          idbSet(STORAGE_KEY_PRODUCTS, cleaned);
+        }
+        return cleaned;
+      }
+    }
+  } catch {}
+
+  memoryProducts = [];
+  return [];
+}
+
+export function saveProduct(product: ProductRecord): ProductRecord[] {
+  try {
+    const all = getSavedProducts();
+    const index = all.findIndex((p) => p.id === product.id);
+    let updated: ProductRecord[];
+    if (index >= 0) {
+      updated = [...all];
+      updated[index] = product;
+    } else {
+      updated = [product, ...all];
+    }
+    memoryProducts = updated;
+    localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(updated));
+    idbSet(STORAGE_KEY_PRODUCTS, updated);
+    return updated;
+  } catch (err) {
+    console.error('Error saving product:', err);
+    return getSavedProducts();
+  }
+}
+
+export function deleteProduct(id: string): ProductRecord[] {
+  try {
+    const all = getSavedProducts();
+    const updated = all.filter((p) => p.id !== id);
+    memoryProducts = updated;
+    localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(updated));
+    idbSet(STORAGE_KEY_PRODUCTS, updated);
+    return updated;
+  } catch (err) {
+    console.error('Error deleting product:', err);
+    return getSavedProducts();
+  }
+}
+
+/**
+ * Completely purges all false/demo records and resets storage to a pristine blank slate.
+ */
+export function purgeAllFalseData(): void {
+  memoryInvoices = [];
+  memoryCustomers = [];
+  memoryProducts = [];
+  try {
+    localStorage.setItem(STORAGE_KEY_INVOICES, JSON.stringify([]));
+    localStorage.setItem(STORAGE_KEY_CUSTOMERS, JSON.stringify([]));
+    localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify([]));
+    idbSet(STORAGE_KEY_INVOICES, []);
+    idbSet(STORAGE_KEY_CUSTOMERS, []);
+    idbSet(STORAGE_KEY_PRODUCTS, []);
+  } catch (err) {
+    console.error('Error purging false data:', err);
+  }
 }
 
 export function exportBackupData(): string {
   const profile = getBusinessProfile();
   const invoices = getSavedInvoices();
-  return JSON.stringify({ profile, invoices, exportedAt: new Date().toISOString() }, null, 2);
+  const subscription = getSubscriptionState();
+  const customers = getSavedCustomers();
+  const products = getSavedProducts();
+  return JSON.stringify(
+    { profile, invoices, subscription, customers, products, exportedAt: new Date().toISOString() },
+    null,
+    2
+  );
 }
 
 export function importBackupData(jsonString: string): boolean {
@@ -284,10 +521,93 @@ export function importBackupData(jsonString: string): boolean {
     const parsed = JSON.parse(jsonString);
     if (parsed.profile) saveBusinessProfile(parsed.profile);
     if (Array.isArray(parsed.invoices)) {
+      memoryInvoices = parsed.invoices;
       localStorage.setItem(STORAGE_KEY_INVOICES, JSON.stringify(parsed.invoices));
+      idbSet(STORAGE_KEY_INVOICES, parsed.invoices);
+    }
+    if (Array.isArray(parsed.customers)) {
+      memoryCustomers = parsed.customers;
+      localStorage.setItem(STORAGE_KEY_CUSTOMERS, JSON.stringify(parsed.customers));
+      idbSet(STORAGE_KEY_CUSTOMERS, parsed.customers);
+    }
+    if (Array.isArray(parsed.products)) {
+      memoryProducts = parsed.products;
+      localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(parsed.products));
+      idbSet(STORAGE_KEY_PRODUCTS, parsed.products);
+    }
+    if (parsed.subscription) {
+      saveSubscriptionState(parsed.subscription);
     }
     return true;
   } catch {
     return false;
   }
 }
+
+/**
+ * Initializes hybrid storage on startup by checking IndexedDB for backup
+ * in case localStorage was cleared.
+ */
+export async function initializeHybridStorage(): Promise<void> {
+  try {
+    const idbInvoices = await idbGet<SavedInvoice[]>(STORAGE_KEY_INVOICES);
+    if (idbInvoices && Array.isArray(idbInvoices)) {
+      const cleanInvoices = idbInvoices.filter(
+        (inv) =>
+          !inv.id.startsWith('inv_demo_') &&
+          inv.invoiceNo !== 'APX-2026-0042' &&
+          inv.invoiceNo !== 'APX-2026-0041' &&
+          inv.autoData?.buyer.fullName !== 'Rahul Sharma' &&
+          inv.autoData?.buyer.fullName !== 'Vikram Joshi'
+      );
+      idbSet(STORAGE_KEY_INVOICES, cleanInvoices);
+      localStorage.setItem(STORAGE_KEY_INVOICES, JSON.stringify(cleanInvoices));
+      memoryInvoices = cleanInvoices;
+    }
+
+    const idbCustomers = await idbGet<CustomerRecord[]>(STORAGE_KEY_CUSTOMERS);
+    if (idbCustomers && Array.isArray(idbCustomers)) {
+      const cleanCustomers = idbCustomers.filter(
+        (c) =>
+          !c.id.startsWith('cust_00') &&
+          c.fullName !== 'Rahul Sharma' &&
+          c.fullName !== 'Vikram Joshi'
+      );
+      idbSet(STORAGE_KEY_CUSTOMERS, cleanCustomers);
+      localStorage.setItem(STORAGE_KEY_CUSTOMERS, JSON.stringify(cleanCustomers));
+      memoryCustomers = cleanCustomers;
+    }
+
+    const idbProducts = await idbGet<ProductRecord[]>(STORAGE_KEY_PRODUCTS);
+    if (idbProducts && Array.isArray(idbProducts)) {
+      const cleanProducts = idbProducts.filter(
+        (p) =>
+          !p.id.startsWith('prod_00') &&
+          !p.name.includes('Ola S1 Pro Gen 2') &&
+          !p.name.includes('Splendor Plus')
+      );
+      idbSet(STORAGE_KEY_PRODUCTS, cleanProducts);
+      localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(cleanProducts));
+      memoryProducts = cleanProducts;
+    }
+
+    const idbProfile = await idbGet<BusinessProfile>(STORAGE_KEY_PROFILE);
+    if (idbProfile) {
+      if (idbProfile.gstin === '27AABCU9603R1ZM' || idbProfile.phone === '+91 98765 43210' || idbProfile.name === 'Apex Motors & EV Hub') {
+        const cleaned = {
+          ...DEFAULT_BUSINESS_PROFILE,
+          name: idbProfile.name === 'Apex Motors & EV Hub' ? DEFAULT_BUSINESS_PROFILE.name : idbProfile.name,
+        };
+        idbSet(STORAGE_KEY_PROFILE, cleaned);
+        localStorage.setItem(STORAGE_KEY_PROFILE, JSON.stringify(cleaned));
+        memoryProfile = cleaned;
+      } else if (!localStorage.getItem(STORAGE_KEY_PROFILE)) {
+        localStorage.setItem(STORAGE_KEY_PROFILE, JSON.stringify(idbProfile));
+        memoryProfile = idbProfile;
+      }
+    }
+  } catch (err) {
+    console.warn('Hybrid storage reconciliation error:', err);
+  }
+}
+

@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { User } from 'firebase/auth';
 import {
   AppMode,
   SavedInvoice,
@@ -11,6 +12,11 @@ import {
   RetailData,
   BusinessProfile,
   PaymentMode,
+  AppLanguage,
+  SubscriptionState,
+  AppView,
+  CustomerRecord,
+  ProductRecord,
 } from './types';
 import {
   getBusinessProfile,
@@ -21,8 +27,23 @@ import {
   recordInvoicePayment,
   generateNextInvoiceNo,
   DEFAULT_BUSINESS_PROFILE,
+  initializeHybridStorage,
+  getSubscriptionState,
+  saveSubscriptionState,
+  incrementMonthlyInvoiceCount,
+  getLanguagePreference,
+  saveLanguagePreference,
+  getSavedCustomers,
+  saveCustomer,
+  deleteCustomer,
+  getSavedProducts,
+  saveProduct,
+  deleteProduct,
+  purgeAllFalseData,
 } from './utils/storage';
-import { exportElementToPDF, triggerPrintDialog } from './utils/pdfExport';
+import { exportElementToPDF, triggerPrintDialog, generatePDFBlob } from './utils/pdfExport';
+import { initAuth, googleSignIn, logout, getAccessToken } from './utils/googleAuth';
+import { uploadBlobToDrive } from './utils/googleDrive';
 import { Header } from './components/Header';
 import { StatsBar } from './components/StatsBar';
 import { AutoDealerForm } from './components/AutoDealerForm';
@@ -32,6 +53,18 @@ import { DeliveryChallanDocument } from './components/DeliveryChallanDocument';
 import { WhatsAppModal } from './components/WhatsAppModal';
 import { KhataLedger } from './components/KhataLedger';
 import { SettingsModal } from './components/SettingsModal';
+import { GoogleDriveModal } from './components/GoogleDriveModal';
+import { SubscriptionModal } from './components/SubscriptionModal';
+import { SlideOverDrawer } from './components/SlideOverDrawer';
+import { QuickQRModal } from './components/QuickQRModal';
+import { HomePage } from './components/HomePage';
+import { AddCustomerModal } from './components/AddCustomerModal';
+import { AddProductModal } from './components/AddProductModal';
+import { VyaparSidebar } from './components/VyaparSidebar';
+import { SalesView } from './components/SalesView';
+import { PartiesView } from './components/PartiesView';
+import { ItemsView } from './components/ItemsView';
+import { ReportsView } from './components/ReportsView';
 import {
   FileText,
   FileCheck2,
@@ -43,95 +76,75 @@ import {
   Eye,
   Edit3,
   Loader2,
-  Sparkles,
-  Layers,
+  Cloud,
+  ExternalLink,
+  QrCode,
+  ArrowLeft,
+  UserPlus,
+  PackagePlus,
 } from 'lucide-react';
+
 
 const INITIAL_AUTO_DATA: AutoDealerData = {
   buyer: {
-    fullName: 'Rahul Sharma',
-    phone: '+91 98220 12345',
-    altPhone: '+91 94220 54321',
+    fullName: '',
+    phone: '',
+    altPhone: '',
     idType: 'Aadhaar Card',
-    idNumber: '4829-9182-3741',
-    address: 'Flat 402, Green Acres Society, Baner',
-    city: 'Pune',
-    state: 'Maharashtra',
-    pincode: '411045',
+    idNumber: '',
+    address: '',
+    city: '',
+    state: '',
+    pincode: '',
   },
   vehicle: {
-    vehicleType: 'electric_vehicle',
-    make: 'Ola Electric',
-    model: 'S1 Pro Gen 2',
-    variant: '4 kWh Matte Black',
-    registrationNo: 'MH12 VK 8821',
-    chassisNo: 'MD9XX4KWH26B88192',
-    engineMotorNo: 'EM-OLA-2026-9932',
-    manufacturingYear: 2026,
-    color: 'Matte Stellar Black',
-    odometerKm: 12,
-    fuelType: 'Electric',
-    batteryCapacityKwh: '4.0 kWh (IP67)',
-    chargerSerialNo: 'CHG-750W-992014',
-    batteryWarrantyYears: '8 Years / 80,000 KM',
-    motorPowerKw: '11 kW Peak',
-    hypothecationBank: 'IDFC First Bank Two-Wheeler Loan',
+    vehicleType: 'two_wheeler',
+    make: '',
+    model: '',
+    variant: '',
+    registrationNo: 'NEW',
+    chassisNo: '',
+    engineMotorNo: '',
+    manufacturingYear: new Date().getFullYear(),
+    color: '',
+    odometerKm: 0,
+    fuelType: 'Petrol',
   },
   pricing: {
-    basePrice: 139999,
-    rtoCharges: 3500,
-    insuranceCharges: 6200,
-    accessoriesCharges: 2500,
-    discount: 4000,
-    totalSaleValue: 148199,
-    advanceReceived: 100000,
-    balanceAmount: 48199,
+    basePrice: 0,
+    rtoCharges: 0,
+    insuranceCharges: 0,
+    accessoriesCharges: 0,
+    discount: 0,
+    totalSaleValue: 0,
+    netPayableAmount: 0,
+    advanceReceived: 0,
+    balanceAmount: 0,
     paymentMode: 'UPI / QR',
-    transactionRef: 'UPI/628919283741',
-    balanceDueDate: '2026-10-05',
-    notes: 'Includes helmet, floor mat, and 750W home fast charger.',
+    transactionRef: '',
+    balanceDueDate: new Date().toISOString().slice(0, 10),
+    notes: '',
   },
 };
 
 const INITIAL_RETAIL_DATA: RetailData = {
   customer: {
-    fullName: 'Vikram Patel',
-    phone: '+91 98900 67890',
-    address: 'Shop 12, Auto Market, Pune',
-    gstin: '27AABCP9876Q1Z2',
+    fullName: '',
+    phone: '',
+    address: '',
+    gstin: '',
   },
-  items: [
-    {
-      id: 'item_1',
-      description: 'Fully Synthetic 4T Engine Oil 15W-50 (1L)',
-      hsn: '2710',
-      qty: 4,
-      unit: 'Btls',
-      rate: 850,
-      gstPercent: 18,
-      amount: 4012,
-    },
-    {
-      id: 'item_2',
-      description: 'Disc Brake Pad Set (Front & Rear)',
-      hsn: '8708',
-      qty: 2,
-      unit: 'Sets',
-      rate: 1200,
-      gstPercent: 18,
-      amount: 2832,
-    },
-  ],
-  subtotal: 5800,
-  discount: 300,
-  totalGst: 1044,
-  grandTotal: 6544,
-  advanceReceived: 5000,
-  balanceAmount: 1544,
+  items: [],
+  subtotal: 0,
+  discount: 0,
+  totalGst: 0,
+  grandTotal: 0,
+  advanceReceived: 0,
+  balanceAmount: 0,
   paymentMode: 'UPI / QR',
-  transactionRef: 'UPI/8892104921',
-  balanceDueDate: '2026-10-02',
-  notes: 'Original OEM spares.',
+  transactionRef: '',
+  balanceDueDate: new Date().toISOString().slice(0, 10),
+  notes: '',
 };
 
 export default function App() {
@@ -141,14 +154,27 @@ export default function App() {
   const [currentId, setCurrentId] = useState<string>('draft_' + Date.now());
 
   // Meta fields
-  const [invoiceNo, setInvoiceNo] = useState<string>('APX-2026-0043');
-  const [invoiceDate, setInvoiceDate] = useState<string>(
+  const [invoiceNo, setInvoiceNo] = useState<string>(() => generateNextInvoiceNo());
+  const [invoiceDate, setInvoiceDate] = useState<string>(() =>
     new Date().toISOString().slice(0, 10)
   );
-  const [deliveryDate, setDeliveryDate] = useState<string>(
+  const [deliveryDate, setDeliveryDate] = useState<string>(() =>
     new Date().toISOString().slice(0, 10)
   );
-  const [deliveryTime, setDeliveryTime] = useState<string>('04:30 PM');
+  const [deliveryTime, setDeliveryTime] = useState<string>(() =>
+    new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })
+  );
+
+  // Navigation View: 'home' | 'sales' | 'parties' | 'items' | 'reports' | 'generate_bill'
+  const [currentView, setCurrentView] = useState<AppView>('home');
+  const [isSidebarOpenMobile, setIsSidebarOpenMobile] = useState<boolean>(false);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+
+  // Customer & Product directories
+  const [customers, setCustomers] = useState<CustomerRecord[]>(() => getSavedCustomers());
+  const [products, setProducts] = useState<ProductRecord[]>(() => getSavedProducts());
+  const [isCustomerModalOpen, setIsCustomerModalOpen] = useState<boolean>(false);
+  const [isProductModalOpen, setIsProductModalOpen] = useState<boolean>(false);
 
   // Form states
   const [autoData, setAutoData] = useState<AutoDealerData>(INITIAL_AUTO_DATA);
@@ -160,30 +186,79 @@ export default function App() {
   // Mobile split view tab ('form' | 'preview')
   const [mobileTab, setMobileTab] = useState<'form' | 'preview'>('form');
 
-  // Modals
+  // Modals & Drawers
   const [isKhataOpen, setIsKhataOpen] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [isWhatsAppOpen, setIsWhatsAppOpen] = useState<boolean>(false);
   const [whatsAppInvoice, setWhatsAppInvoice] = useState<SavedInvoice | null>(null);
+  const [isDriveModalOpen, setIsDriveModalOpen] = useState<boolean>(false);
+  const [isSubscriptionOpen, setIsSubscriptionOpen] = useState<boolean>(false);
+  const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
+  const [isQuickQROpen, setIsQuickQROpen] = useState<boolean>(false);
+
+  // Multilingual & Subscription States
+  const [lang, setLang] = useState<AppLanguage>(() => getLanguagePreference());
+  const [subscription, setSubscription] = useState<SubscriptionState>(() => getSubscriptionState());
+
+  const handleToggleLang = () => {
+    const nextLang: AppLanguage = lang === 'en' ? 'hi' : 'en';
+    setLang(nextLang);
+    saveLanguagePreference(nextLang);
+  };
+
+  // Google Auth & Drive States
+  const [user, setUser] = useState<User | null>(null);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
+  const [isUploadingToDrive, setIsUploadingToDrive] = useState<boolean>(false);
+  const [driveUploadSuccessLink, setDriveUploadSuccessLink] = useState<{ name: string; url: string } | null>(null);
 
   // UI state
   const [isPdfGenerating, setIsPdfGenerating] = useState<boolean>(false);
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
 
-  // Load initial data
+  // Load initial data & Auth state & Hybrid Storage reconciliation
   useEffect(() => {
     const loadedProfile = getBusinessProfile();
     setProfile(loadedProfile);
     const loadedInvoices = getSavedInvoices();
     setInvoices(loadedInvoices);
+    setSubscription(getSubscriptionState());
+
+    // Hydrate from IndexedDB in background to prevent browser storage wipes
+    initializeHybridStorage().then(() => {
+      setProfile(getBusinessProfile());
+      setInvoices(getSavedInvoices());
+      setSubscription(getSubscriptionState());
+      setCustomers(getSavedCustomers());
+      setProducts(getSavedProducts());
+    });
+
+    // Initialize Google auth listener
+    const unsubscribe = initAuth(
+      (authUser, token) => {
+        setUser(authUser);
+        setAccessToken(token);
+        setIsAuthLoading(false);
+      },
+      () => {
+        setUser(null);
+        setAccessToken(null);
+        setIsAuthLoading(false);
+      }
+    );
+
+    return () => {
+      unsubscribe();
+    };
   }, []);
 
   // Assemble active invoice object
   const activeInvoice: SavedInvoice = useMemo(() => {
     const isAuto = mode === 'auto_dealer';
     const balance = isAuto
-      ? autoData.pricing.balanceAmount
-      : retailData.balanceAmount;
+      ? autoData?.pricing?.balanceAmount || 0
+      : retailData?.balanceAmount || 0;
 
     return {
       id: currentId,
@@ -200,9 +275,9 @@ export default function App() {
         {
           id: 'pay_init',
           date: invoiceDate,
-          amount: isAuto ? autoData.pricing.advanceReceived : retailData.advanceReceived,
-          mode: isAuto ? autoData.pricing.paymentMode : retailData.paymentMode,
-          reference: isAuto ? autoData.pricing.transactionRef : retailData.transactionRef,
+          amount: isAuto ? (autoData?.pricing?.advanceReceived || 0) : (retailData?.advanceReceived || 0),
+          mode: isAuto ? (autoData?.pricing?.paymentMode || 'Cash') : (retailData?.paymentMode || 'Cash'),
+          reference: isAuto ? autoData?.pricing?.transactionRef : retailData?.transactionRef,
           note: 'Token / Advance payment',
         },
       ],
@@ -226,16 +301,101 @@ export default function App() {
     return invoices.filter((inv) => {
       const bal =
         inv.mode === 'auto_dealer'
-          ? inv.autoData?.pricing.balanceAmount || 0
+          ? inv.autoData?.pricing?.balanceAmount || 0
           : inv.retailData?.balanceAmount || 0;
       return bal > 0;
     }).length;
   }, [invoices]);
 
+  // Google Sign-In handler
+  const handleGoogleSignIn = async () => {
+    setIsAuthLoading(true);
+    try {
+      const res = await googleSignIn();
+      if (res) {
+        setUser(res.user);
+        setAccessToken(res.accessToken);
+      }
+    } catch (err) {
+      console.error('Sign-in failed:', err);
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  const handleGoogleSignOut = async () => {
+    await logout();
+    setUser(null);
+    setAccessToken(null);
+  };
+
+  // Upload current invoice or challan to Google Drive
+  const handleSaveToDrive = async () => {
+    let token = accessToken;
+    if (!token || !user) {
+      setIsAuthLoading(true);
+      try {
+        const res = await googleSignIn();
+        if (res) {
+          setUser(res.user);
+          setAccessToken(res.accessToken);
+          token = res.accessToken;
+        } else {
+          return;
+        }
+      } catch (err) {
+        console.error('Drive sign-in error:', err);
+        return;
+      } finally {
+        setIsAuthLoading(false);
+      }
+    }
+
+    if (!token) return;
+
+    setIsUploadingToDrive(true);
+    setDriveUploadSuccessLink(null);
+
+    const elementId =
+      previewTab === 'invoice'
+        ? 'printable-invoice-document'
+        : 'printable-challan-document';
+
+    const filename = `${invoiceNo}_${
+      previewTab === 'invoice' ? 'Tax-Invoice' : 'Delivery-Challan'
+    }.pdf`;
+
+    try {
+      const blob = await generatePDFBlob(elementId);
+      if (!blob) throw new Error('Failed to generate PDF document');
+
+      const uploaded = await uploadBlobToDrive(blob, filename, token);
+      if (uploaded.webViewLink) {
+        setDriveUploadSuccessLink({
+          name: uploaded.name,
+          url: uploaded.webViewLink,
+        });
+        setTimeout(() => setDriveUploadSuccessLink(null), 8000);
+      }
+    } catch (err: any) {
+      console.error('Error saving to Drive:', err);
+      alert(`Could not upload to Google Drive: ${err.message || 'Unknown error'}`);
+    } finally {
+      setIsUploadingToDrive(false);
+    }
+  };
+
   // Actions
   const handleSaveToKhata = () => {
+    // Check monthly cap if on Free Tier
+    const countCheck = incrementMonthlyInvoiceCount();
+    if (!countCheck.allowed) {
+      setIsSubscriptionOpen(true);
+      return;
+    }
     const updated = saveInvoice(activeInvoice);
     setInvoices(updated);
+    setSubscription(getSubscriptionState());
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 2000);
   };
@@ -247,7 +407,9 @@ export default function App() {
     const today = new Date().toISOString().slice(0, 10);
     setInvoiceDate(today);
     setDeliveryDate(today);
-    setDeliveryTime('04:00 PM');
+    setDeliveryTime(
+      new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })
+    );
 
     if (mode === 'auto_dealer') {
       setAutoData({
@@ -257,31 +419,33 @@ export default function App() {
           idType: 'Aadhaar Card',
           idNumber: '',
           address: '',
-          city: profile.city || 'Pune',
-          state: profile.state || 'Maharashtra',
+          city: profile.city || '',
+          state: profile.state || '',
           pincode: profile.pincode || '',
         },
         vehicle: {
           vehicleType: 'two_wheeler',
-          make: 'Hero MotoCorp',
-          model: 'Splendor Plus',
+          make: '',
+          model: '',
+          variant: '',
           registrationNo: 'NEW',
           chassisNo: '',
           engineMotorNo: '',
-          manufacturingYear: 2026,
-          color: 'Black',
-          odometerKm: 5,
+          manufacturingYear: new Date().getFullYear(),
+          color: '',
+          odometerKm: 0,
           fuelType: 'Petrol',
         },
         pricing: {
-          basePrice: 79000,
-          rtoCharges: 7000,
-          insuranceCharges: 5200,
-          accessoriesCharges: 1500,
-          discount: 1000,
-          totalSaleValue: 91700,
-          advanceReceived: 25000,
-          balanceAmount: 66700,
+          basePrice: 0,
+          rtoCharges: 0,
+          insuranceCharges: 0,
+          accessoriesCharges: 0,
+          discount: 0,
+          totalSaleValue: 0,
+          netPayableAmount: 0,
+          advanceReceived: 0,
+          balanceAmount: 0,
           paymentMode: 'UPI / QR',
           balanceDueDate: today,
         },
@@ -293,18 +457,7 @@ export default function App() {
           phone: '',
           address: '',
         },
-        items: [
-          {
-            id: 'item_' + Date.now(),
-            description: '',
-            hsn: '',
-            qty: 1,
-            unit: 'Pcs',
-            rate: 0,
-            gstPercent: 18,
-            amount: 0,
-          },
-        ],
+        items: [],
         subtotal: 0,
         discount: 0,
         totalGst: 0,
@@ -315,6 +468,7 @@ export default function App() {
         balanceDueDate: today,
       });
     }
+    setCurrentView('generate_bill');
   };
 
   const handleSelectInvoiceFromKhata = (inv: SavedInvoice) => {
@@ -330,7 +484,128 @@ export default function App() {
     } else if (inv.mode === 'general_retail' && inv.retailData) {
       setRetailData(inv.retailData);
     }
+    setCurrentView('generate_bill');
   };
+
+  const handleSaveCustomer = (customer: CustomerRecord) => {
+    const updated = saveCustomer(customer);
+    setCustomers(updated);
+  };
+
+  const handleDeleteCustomer = (id: string) => {
+    const updated = deleteCustomer(id);
+    setCustomers(updated);
+  };
+
+  const handleSaveProduct = (product: ProductRecord) => {
+    const updated = saveProduct(product);
+    setProducts(updated);
+  };
+
+  const handleDeleteProduct = (id: string) => {
+    const updated = deleteProduct(id);
+    setProducts(updated);
+  };
+
+  const handleSelectCustomerForBill = (customer: CustomerRecord) => {
+    if (mode === 'auto_dealer') {
+      setAutoData((prev) => ({
+        ...prev,
+        buyer: {
+          fullName: customer.fullName,
+          phone: customer.phone,
+          altPhone: customer.altPhone || '',
+          idType: customer.idType || 'Aadhaar Card',
+          idNumber: customer.idNumber || '',
+          address: customer.address || '',
+          city: customer.city || '',
+          state: customer.state || '',
+          pincode: customer.pincode || '',
+        },
+      }));
+    } else {
+      setRetailData((prev) => ({
+        ...prev,
+        customer: {
+          fullName: customer.fullName,
+          phone: customer.phone,
+          address: [customer.address, customer.city, customer.state, customer.pincode]
+            .filter(Boolean)
+            .join(', '),
+          gstin: customer.gstin || '',
+        },
+      }));
+    }
+    setCurrentView('generate_bill');
+  };
+
+  const handleSelectProductForBill = (product: ProductRecord) => {
+    if (mode === 'auto_dealer') {
+      setAutoData((prev) => {
+        const cat = ['two_wheeler', 'four_wheeler', 'electric_vehicle', 'commercial'].includes(
+          product.category
+        )
+          ? product.category
+          : 'two_wheeler';
+
+        const base = product.rate || 0;
+        const total =
+          base +
+          prev.pricing.rtoCharges +
+          prev.pricing.insuranceCharges +
+          prev.pricing.accessoriesCharges -
+          prev.pricing.discount;
+        const net = total - (prev.pricing.exchangeValuation || 0);
+        const bal = Math.max(0, net - prev.pricing.advanceReceived);
+
+        return {
+          ...prev,
+          vehicle: {
+            ...prev.vehicle,
+            vehicleType: cat as any,
+            make: product.make || product.name,
+            model: product.model || product.name,
+            variant: product.variant || '',
+          },
+          pricing: {
+            ...prev.pricing,
+            basePrice: base,
+            totalSaleValue: total,
+            netPayableAmount: net,
+            balanceAmount: bal,
+          },
+        };
+      });
+    } else {
+      const newItem = {
+        id: 'item_' + Date.now(),
+        description: product.name,
+        hsn: product.hsn,
+        qty: 1,
+        unit: product.unit,
+        rate: product.rate,
+        gstPercent: product.gstPercent,
+        amount: product.rate,
+      };
+      setRetailData((prev) => {
+        const items = [...prev.items, newItem];
+        const subtotal = items.reduce((s, i) => s + i.amount, 0);
+        const totalGst = items.reduce((s, i) => s + (i.amount * i.gstPercent) / 100, 0);
+        const grandTotal = Math.round(subtotal + totalGst - prev.discount);
+        const balanceAmount = Math.max(0, grandTotal - prev.advanceReceived);
+        return {
+          ...prev,
+          items,
+          subtotal,
+          totalGst,
+          grandTotal,
+          balanceAmount,
+        };
+      });
+    }
+    setCurrentView('generate_bill');
+  };
+
 
   const handleDeleteInvoice = (id: string) => {
     const updated = deleteInvoice(id);
@@ -351,7 +626,6 @@ export default function App() {
     });
     setInvoices(result.all);
 
-    // If active invoice was the one updated, refresh current state
     if (activeInvoice.id === invoiceId && result.updatedInvoice) {
       if (result.updatedInvoice.autoData) {
         setAutoData(result.updatedInvoice.autoData);
@@ -385,10 +659,31 @@ export default function App() {
     setIsWhatsAppOpen(true);
   };
 
+  const handleClearAllData = () => {
+    const isHindi = lang === 'hi';
+    const confirmMsg = isHindi
+      ? 'क्या आप सचमुच सभी इनवॉइस, ग्राहक और सामान का फर्जी डेटा हटाकर डैशबोर्ड को पूरी तरह साफ करना चाहते हैं?'
+      : 'Are you sure you want to delete all false/demo records and reset the dashboard to a clean slate?';
+    if (window.confirm(confirmMsg)) {
+      purgeAllFalseData();
+      setInvoices([]);
+      setCustomers([]);
+      setProducts([]);
+      const cleanProf = getBusinessProfile();
+      setProfile(cleanProf);
+      handleNewInvoice();
+      setCurrentView('home');
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2500);
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-slate-100/70 text-slate-900 flex flex-col antialiased">
-      {/* 1. Header Navigation */}
-      <Header
+    <div className="min-h-screen bg-slate-100/70 text-slate-900 flex antialiased">
+      {/* 1. Zoho / Vyapar Left Navigation Sidebar */}
+      <VyaparSidebar
+        currentView={currentView}
+        onNavigate={(view) => setCurrentView(view)}
         mode={mode}
         onModeChange={(newMode) => {
           setMode(newMode);
@@ -396,19 +691,208 @@ export default function App() {
             setPreviewTab('invoice');
           }
         }}
-        onOpenKhata={() => setIsKhataOpen(true)}
-        onOpenSettings={() => setIsSettingsOpen(true)}
-        onNewInvoice={handleNewInvoice}
+        profile={profile}
+        subscription={subscription}
         pendingBalanceCount={pendingCount}
+        isOpenMobile={isSidebarOpenMobile}
+        onCloseMobile={() => setIsSidebarOpenMobile(false)}
+        onOpenQuickQR={() => setIsQuickQROpen(true)}
+        onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenDriveModal={() => setIsDriveModalOpen(true)}
+        onOpenSubscription={() => setIsSubscriptionOpen(true)}
+        onNewInvoice={() => {
+          handleNewInvoice();
+          setCurrentView('generate_bill');
+        }}
+        onClearAllData={handleClearAllData}
+        lang={lang}
+        onToggleLang={handleToggleLang}
       />
 
-      {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-5">
-        {/* KPI Stats Bar */}
-        <StatsBar
-          invoices={invoices}
-          onFilterPendingClick={() => setIsKhataOpen(true)}
+      {/* 2. Main App Content Viewport */}
+      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-y-auto">
+        <Header
+          mode={mode}
+          onModeChange={(newMode) => {
+            setMode(newMode);
+            if (newMode === 'general_retail' && previewTab === 'challan') {
+              setPreviewTab('invoice');
+            }
+          }}
+          currentView={currentView}
+          onNavigate={(view) => setCurrentView(view)}
+          onOpenKhata={() => setIsKhataOpen(true)}
+          onNewInvoice={() => {
+            handleNewInvoice();
+            setCurrentView('generate_bill');
+          }}
+          onAddCustomer={() => setIsCustomerModalOpen(true)}
+          onAddProduct={() => setIsProductModalOpen(true)}
+          onOpenQuickQR={() => setIsQuickQROpen(true)}
+          onToggleSidebarMobile={() => setIsSidebarOpenMobile((prev) => !prev)}
+          pendingBalanceCount={pendingCount}
+          subscription={subscription}
+          lang={lang}
+          onToggleLang={handleToggleLang}
+          searchQuery={searchQuery}
+          onSearchChange={(q) => setSearchQuery(q)}
         />
+
+        <div className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 print:p-0 print:m-0 print:max-w-none print:w-full">
+          {currentView === 'home' && (
+            <HomePage
+              profile={profile}
+              invoices={invoices}
+              subscription={subscription}
+              mode={mode}
+              lang={lang}
+              customers={customers}
+              products={products}
+              onGenerateBill={() => {
+                handleNewInvoice();
+                setCurrentView('generate_bill');
+              }}
+              onAddCustomer={() => setIsCustomerModalOpen(true)}
+              onAddProduct={() => setIsProductModalOpen(true)}
+              onOpenQuickQR={() => setIsQuickQROpen(true)}
+              onOpenKhata={() => setIsKhataOpen(true)}
+              onNavigateToSales={() => setCurrentView('sales')}
+              onNavigateToParties={() => setCurrentView('parties')}
+              onNavigateToItems={() => setCurrentView('items')}
+              onSelectInvoiceToView={(inv) => {
+                handleSelectInvoiceFromKhata(inv);
+                setCurrentView('generate_bill');
+              }}
+              onPrintInvoice={(inv) => {
+                handleSelectInvoiceFromKhata(inv);
+                setTimeout(() => triggerPrintDialog(), 200);
+              }}
+              onWhatsAppInvoice={(inv) => {
+                setWhatsAppInvoice(inv);
+                setIsWhatsAppOpen(true);
+              }}
+              onRecordPayment={handleRecordPayment}
+              onClearAllData={handleClearAllData}
+              onSwitchMode={(newMode) => {
+                setMode(newMode);
+                if (newMode === 'general_retail' && previewTab === 'challan') {
+                  setPreviewTab('invoice');
+                }
+              }}
+            />
+          )}
+
+          {currentView === 'sales' && (
+            <SalesView
+              invoices={invoices}
+              lang={lang}
+              onSelectInvoiceToView={(inv) => {
+                handleSelectInvoiceFromKhata(inv);
+                setCurrentView('generate_bill');
+              }}
+              onPrintInvoice={(inv) => {
+                handleSelectInvoiceFromKhata(inv);
+                setTimeout(() => triggerPrintDialog(), 200);
+              }}
+              onWhatsAppInvoice={(inv) => {
+                setWhatsAppInvoice(inv);
+                setIsWhatsAppOpen(true);
+              }}
+              onDeleteInvoice={handleDeleteInvoice}
+              onRecordPayment={handleRecordPayment}
+              onNewInvoice={() => {
+                handleNewInvoice();
+                setCurrentView('generate_bill');
+              }}
+              searchQuery={searchQuery}
+            />
+          )}
+
+          {currentView === 'parties' && (
+            <PartiesView
+              customers={customers}
+              invoices={invoices}
+              lang={lang}
+              onAddCustomer={() => setIsCustomerModalOpen(true)}
+              onDeleteCustomer={handleDeleteCustomer}
+              onSelectCustomerForBill={handleSelectCustomerForBill}
+              onRecordPayment={handleRecordPayment}
+              searchQuery={searchQuery}
+            />
+          )}
+
+          {currentView === 'items' && (
+            <ItemsView
+              products={products}
+              lang={lang}
+              onAddProduct={() => setIsProductModalOpen(true)}
+              onDeleteProduct={handleDeleteProduct}
+              onSelectProductForBill={handleSelectProductForBill}
+              searchQuery={searchQuery}
+            />
+          )}
+
+          {currentView === 'reports' && (
+            <ReportsView
+              invoices={invoices}
+              profile={profile}
+              lang={lang}
+            />
+          )}
+
+          {currentView === 'generate_bill' && (
+        /* Main Container for Billing Workspace */
+        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-5 print:p-0 print:m-0 print:max-w-none print:w-full">
+          {/* Quick Header Bar for Invoice Workspace */}
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4 no-print bg-white p-3 rounded-2xl border border-slate-200/90 shadow-xs">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setCurrentView('home')}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition-colors cursor-pointer border border-slate-200 shadow-xs"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>← Back to Home</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsCustomerModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                title="Select or add customer"
+              >
+                <UserPlus className="w-3.5 h-3.5 text-emerald-700" />
+                <span className="hidden sm:inline">Select / Add Customer</span>
+                <span className="sm:hidden">Customer</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsProductModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                title="Select product from catalog"
+              >
+                <PackagePlus className="w-3.5 h-3.5 text-sky-700" />
+                <span className="hidden sm:inline">Add Product Catalog</span>
+                <span className="sm:hidden">Product</span>
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 text-xs">
+              <span className="font-bold text-slate-500">
+                Invoice No:{' '}
+                <span className="font-mono text-slate-900 font-black">{invoiceNo}</span>
+              </span>
+            </div>
+          </div>
+
+          {/* KPI Stats Bar */}
+          <StatsBar
+            invoices={invoices}
+            subscription={subscription}
+            onFilterPendingClick={() => setIsKhataOpen(true)}
+          />
+
 
         {/* Mobile View Toggle Bar */}
         <div className="lg:hidden flex items-center justify-center mb-4 bg-white p-1 rounded-xl border border-slate-200 shadow-xs no-print">
@@ -440,10 +924,10 @@ export default function App() {
         </div>
 
         {/* Split Screen Workspace */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          {/* LEFT COLUMN: Input Form (48% width / 6 cols on lg) */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start print:block print:w-full">
+          {/* LEFT COLUMN: Input Form (6 cols on lg) */}
           <div
-            className={`lg:col-span-6 space-y-6 ${
+            className={`no-print lg:col-span-6 space-y-6 ${
               mobileTab === 'preview' ? 'hidden lg:block' : 'block'
             }`}
           >
@@ -459,6 +943,7 @@ export default function App() {
                 onDeliveryDateChange={setDeliveryDate}
                 deliveryTime={deliveryTime}
                 onDeliveryTimeChange={setDeliveryTime}
+                lang={lang}
               />
             ) : (
               <RetailForm
@@ -472,11 +957,11 @@ export default function App() {
             )}
           </div>
 
-          {/* RIGHT COLUMN: Interactive Document Preview & Output Actions (52% width / 6 cols on lg) */}
+          {/* RIGHT COLUMN: Interactive Document Preview & Output Actions (6 cols on lg) */}
           <div
             className={`lg:col-span-6 space-y-4 ${
               mobileTab === 'form' ? 'hidden lg:block' : 'block'
-            }`}
+            } print:block print:w-full print:max-w-none print:m-0 print:p-0`}
           >
             {/* Action Bar Sticky on Desktop */}
             <div className="sticky top-20 z-30 bg-white/95 backdrop-blur-md p-3.5 rounded-xl border border-slate-200 shadow-sm no-print space-y-3">
@@ -533,48 +1018,104 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Instant Output Actions */}
-              <div className="grid grid-cols-3 gap-2 pt-1 border-t border-slate-100 text-xs">
-                {/* 1. PDF Download */}
+              {/* Instant Output Actions: 5 items grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1 border-t border-slate-100 text-xs">
+                {/* 1. Print / Save PDF via Browser */}
+                <button
+                  type="button"
+                  onClick={triggerPrintDialog}
+                  className="flex items-center justify-center gap-1.5 py-2 px-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg shadow-xs transition-colors cursor-pointer"
+                  title="Trigger native physical print dialog"
+                >
+                  <Printer className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Print Bill</span>
+                </button>
+
+                {/* 2. PDF Download */}
                 <button
                   type="button"
                   disabled={isPdfGenerating}
                   onClick={handleDownloadPDF}
-                  className="flex items-center justify-center gap-1.5 py-2 px-3 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                  className="flex items-center justify-center gap-1.5 py-2 px-2.5 bg-white hover:bg-slate-50 text-slate-800 font-bold border border-slate-300 rounded-lg shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                  title="Export high-res A4 PDF"
                 >
                   {isPdfGenerating ? (
                     <>
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>Generating...</span>
+                      <span>PDF...</span>
                     </>
                   ) : (
                     <>
-                      <Download className="w-3.5 h-3.5 text-amber-400" />
-                      <span>PDF Download</span>
+                      <Download className="w-3.5 h-3.5 text-slate-600" />
+                      <span>PDF File</span>
                     </>
                   )}
-                </button>
-
-                {/* 2. Print / Save PDF via Browser */}
-                <button
-                  type="button"
-                  onClick={triggerPrintDialog}
-                  className="flex items-center justify-center gap-1.5 py-2 px-3 bg-white hover:bg-slate-50 text-slate-800 font-bold border border-slate-300 rounded-lg shadow-xs transition-colors cursor-pointer"
-                >
-                  <Printer className="w-3.5 h-3.5 text-slate-600" />
-                  <span>Print (A4)</span>
                 </button>
 
                 {/* 3. WhatsApp Reminder */}
                 <button
                   type="button"
                   onClick={openWhatsAppWithCurrent}
-                  className="flex items-center justify-center gap-1.5 py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-xs transition-colors cursor-pointer"
+                  className="flex items-center justify-center gap-1.5 py-2 px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-xs transition-colors cursor-pointer"
+                  title="Send invoice & payment reminder on WhatsApp"
                 >
                   <MessageCircle className="w-3.5 h-3.5" />
                   <span>WhatsApp</span>
                 </button>
+
+                {/* 4. Dynamic UPI QR */}
+                <button
+                  type="button"
+                  onClick={() => setIsQuickQROpen(true)}
+                  className="flex items-center justify-center gap-1.5 py-2 px-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-lg shadow-xs transition-colors cursor-pointer"
+                  title="Show customer counter scan-to-pay QR"
+                >
+                  <QrCode className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>UPI QR</span>
+                </button>
+
+                {/* 5. Save to Google Drive */}
+                <button
+                  type="button"
+                  disabled={isUploadingToDrive}
+                  onClick={handleSaveToDrive}
+                  className="col-span-2 sm:col-span-1 flex items-center justify-center gap-1.5 py-2 px-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                  title="Upload PDF copy to Google Drive"
+                >
+                  {isUploadingToDrive ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Cloud className="w-3.5 h-3.5 text-blue-200" />
+                      <span>Drive</span>
+                    </>
+                  )}
+                </button>
               </div>
+
+              {/* Drive Upload Success Banner */}
+              {driveUploadSuccessLink && (
+                <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between text-xs text-blue-900 animate-in fade-in">
+                  <div className="flex items-center gap-1.5 truncate">
+                    <Cloud className="w-4 h-4 text-blue-600 shrink-0" />
+                    <span className="truncate">
+                      Saved <strong>{driveUploadSuccessLink.name}</strong> to Google Drive!
+                    </span>
+                  </div>
+                  <a
+                    href={driveUploadSuccessLink.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 font-bold text-blue-700 hover:underline shrink-0 ml-2"
+                  >
+                    <span>View on Drive</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              )}
             </div>
 
             {/* Document Render Canvas */}
@@ -583,48 +1124,155 @@ export default function App() {
                 <InvoiceDocument
                   invoice={activeInvoice}
                   id="printable-invoice-document"
+                  hasWatermark={subscription.hasWatermark}
+                  onPrint={triggerPrintDialog}
+                  onDownloadPDF={handleDownloadPDF}
+                  onOpenWhatsApp={openWhatsAppWithCurrent}
+                  onOpenQR={() => setIsQuickQROpen(true)}
+                  isPdfGenerating={isPdfGenerating}
                 />
               ) : (
                 <DeliveryChallanDocument
                   invoice={activeInvoice}
                   id="printable-challan-document"
+                  hasWatermark={subscription.hasWatermark}
+                  onPrint={triggerPrintDialog}
+                  onDownloadPDF={handleDownloadPDF}
+                  onOpenWhatsApp={openWhatsAppWithCurrent}
+                  onOpenQR={() => setIsQuickQROpen(true)}
+                  isPdfGenerating={isPdfGenerating}
                 />
               )}
             </div>
           </div>
         </div>
       </main>
+      )}
+        </div>
 
       {/* Footer */}
       <footer className="bg-white border-t border-slate-200 py-4 px-4 sm:px-6 text-center text-xs text-slate-500 no-print mt-auto">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
           <p className="flex items-center gap-1.5">
-            <span className="font-bold text-slate-800">AutoBill &amp; Smart Khata</span> &bull; Built for Two-Wheeler, Four-Wheeler, EV Dealers &amp; Retailers.
+            <span className="font-bold text-slate-800">BahiKhata</span> &bull; Smart Billing &amp; Ledger Platform with A4 Printing &amp; Cloud Drive Sync.
           </p>
           <div className="flex items-center gap-4 text-slate-400">
+            <button
+              type="button"
+              onClick={() => setIsSubscriptionOpen(true)}
+              className="hover:text-amber-700 underline flex items-center gap-1 cursor-pointer font-semibold text-amber-800"
+            >
+              <span>{subscription.tier !== 'free' ? '★ Pro Active' : 'Upgrade to Pro'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsDriveModalOpen(true)}
+              className="hover:text-blue-600 underline flex items-center gap-1 cursor-pointer"
+            >
+              <Cloud className="w-3.5 h-3.5 text-blue-500" />
+              <span>Google Drive Hub</span>
+            </button>
             <button
               type="button"
               onClick={() => setIsKhataOpen(true)}
               className="hover:text-slate-700 underline cursor-pointer"
             >
-              Open Digital Khata
+              Digital Khata
             </button>
             <button
               type="button"
-              onClick={() => setIsSettingsOpen(true)}
-              className="hover:text-slate-700 underline cursor-pointer"
+              onClick={() => setIsDrawerOpen(true)}
+              className="hover:text-slate-700 underline cursor-pointer font-medium text-slate-600"
             >
-              Dealership Profile
+              More Settings &rarr;
             </button>
           </div>
         </div>
       </footer>
+      </div>
 
-      {/* MODALS */}
+      {/* MODALS & DRAWERS */}
+      <SlideOverDrawer
+        isOpen={isDrawerOpen}
+        onClose={() => setIsDrawerOpen(false)}
+        profile={profile}
+        subscription={subscription}
+        lang={lang}
+        onLanguageChange={(newLang) => {
+          setLang(newLang);
+          saveLanguagePreference(newLang);
+        }}
+        mode={mode}
+        onModeChange={(newMode) => {
+          setMode(newMode);
+          if (newMode === 'general_retail' && previewTab === 'challan') {
+            setPreviewTab('invoice');
+          }
+        }}
+        onNavigateHome={() => setCurrentView('home')}
+        onGenerateBill={() => {
+          handleNewInvoice();
+          setCurrentView('generate_bill');
+        }}
+        onOpenCustomerHub={() => setIsCustomerModalOpen(true)}
+        onOpenProductHub={() => setIsProductModalOpen(true)}
+        onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenSubscription={() => setIsSubscriptionOpen(true)}
+        onOpenDriveModal={() => setIsDriveModalOpen(true)}
+        onOpenKhata={() => setIsKhataOpen(true)}
+        onOpenQuickQR={() => setIsQuickQROpen(true)}
+        pendingBalanceCount={pendingCount}
+        user={user}
+        isAuthLoading={isAuthLoading}
+        onGoogleSignIn={handleGoogleSignIn}
+        onGoogleSignOut={handleGoogleSignOut}
+      />
+
+      <AddCustomerModal
+        isOpen={isCustomerModalOpen}
+        onClose={() => setIsCustomerModalOpen(false)}
+        customers={customers}
+        onSaveCustomer={handleSaveCustomer}
+        onDeleteCustomer={handleDeleteCustomer}
+        onSelectCustomerForBill={handleSelectCustomerForBill}
+      />
+
+      <AddProductModal
+        isOpen={isProductModalOpen}
+        onClose={() => setIsProductModalOpen(false)}
+        products={products}
+        onSaveProduct={handleSaveProduct}
+        onDeleteProduct={handleDeleteProduct}
+        onSelectProductForBill={handleSelectProductForBill}
+      />
+
+
+      <QuickQRModal
+        isOpen={isQuickQROpen}
+        onClose={() => setIsQuickQROpen(false)}
+        upiId={profile.upiId}
+        payeeName={profile.name}
+        amount={
+          mode === 'auto_dealer'
+            ? (autoData?.pricing?.balanceAmount || 0)
+            : (retailData?.balanceAmount || 0)
+        }
+        invoiceNo={invoiceNo}
+      />
+
       <WhatsAppModal
         invoice={whatsAppInvoice}
         isOpen={isWhatsAppOpen}
         onClose={() => setIsWhatsAppOpen(false)}
+        lang={lang}
+      />
+
+      <SubscriptionModal
+        isOpen={isSubscriptionOpen}
+        onClose={() => setIsSubscriptionOpen(false)}
+        subscription={subscription}
+        onSubscriptionUpdated={(newSub) => setSubscription(newSub)}
+        lang={lang}
       />
 
       <KhataLedger
@@ -642,6 +1290,7 @@ export default function App() {
           setInvoices(getSavedInvoices());
           setProfile(getBusinessProfile());
         }}
+        onOpenDriveModal={() => setIsDriveModalOpen(true)}
       />
 
       <SettingsModal
@@ -649,6 +1298,20 @@ export default function App() {
         onClose={() => setIsSettingsOpen(false)}
         profile={profile}
         onSave={handleSaveProfile}
+      />
+
+      <GoogleDriveModal
+        isOpen={isDriveModalOpen}
+        onClose={() => setIsDriveModalOpen(false)}
+        user={user}
+        accessToken={accessToken}
+        onSignInRequired={handleGoogleSignIn}
+        onKhataRestored={() => {
+          setInvoices(getSavedInvoices());
+          setProfile(getBusinessProfile());
+        }}
+        onUploadCurrentInvoice={handleSaveToDrive}
+        isUploadingCurrent={isUploadingToDrive}
       />
     </div>
   );

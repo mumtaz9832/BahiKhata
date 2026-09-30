@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { SavedInvoice } from '../types';
+import { SavedInvoice, AppLanguage } from '../types';
 import {
   generateWhatsAppMessage,
   WhatsAppTemplateType,
@@ -14,29 +14,37 @@ import {
   Send,
   Sparkles,
   Phone,
+  Globe,
 } from 'lucide-react';
 
 interface WhatsAppModalProps {
   invoice: SavedInvoice | null;
   isOpen: boolean;
   onClose: () => void;
+  lang?: AppLanguage;
 }
 
 export const WhatsAppModal: React.FC<WhatsAppModalProps> = ({
   invoice,
   isOpen,
   onClose,
+  lang: initialLang = 'en',
 }) => {
   if (!isOpen || !invoice) return null;
 
   const [activeTemplate, setActiveTemplate] = useState<WhatsAppTemplateType>('balance_due');
+  const [selectedLang, setSelectedLang] = useState<AppLanguage>(initialLang);
   const [phone, setPhone] = useState<string>('');
   const [messageText, setMessageText] = useState<string>('');
   const [copied, setCopied] = useState<boolean>(false);
 
   useEffect(() => {
+    setSelectedLang(initialLang);
+  }, [initialLang]);
+
+  useEffect(() => {
     if (invoice) {
-      const generated = generateWhatsAppMessage(invoice, activeTemplate);
+      const generated = generateWhatsAppMessage(invoice, activeTemplate, selectedLang);
       setMessageText(generated.text);
       const buyerPhone =
         invoice.mode === 'auto_dealer'
@@ -44,7 +52,7 @@ export const WhatsAppModal: React.FC<WhatsAppModalProps> = ({
           : invoice.retailData?.customer.phone || '';
       setPhone(buyerPhone);
     }
-  }, [invoice, activeTemplate]);
+  }, [invoice, activeTemplate, selectedLang]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(messageText);
@@ -63,7 +71,7 @@ export const WhatsAppModal: React.FC<WhatsAppModalProps> = ({
 
   const isAuto = invoice.mode === 'auto_dealer';
   const balance = isAuto
-    ? invoice.autoData?.pricing.balanceAmount || 0
+    ? invoice.autoData?.pricing?.balanceAmount || 0
     : invoice.retailData?.balanceAmount || 0;
 
   return (
@@ -93,11 +101,37 @@ export const WhatsAppModal: React.FC<WhatsAppModalProps> = ({
 
         {/* Body */}
         <div className="p-5 space-y-4 text-xs">
-          {/* Template Tabs */}
+          {/* Template Tabs & Language Toggle */}
           <div>
-            <label className="block text-slate-600 font-semibold mb-1.5">
-              Choose Message Intent:
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-slate-700 font-semibold">
+                Choose Message Intent:
+              </label>
+              <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setSelectedLang('en')}
+                  className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                    selectedLang === 'en'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  English
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedLang('hi')}
+                  className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                    selectedLang === 'hi'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  हिन्दी
+                </button>
+              </div>
+            </div>
             <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"

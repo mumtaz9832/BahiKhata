@@ -6,6 +6,20 @@ export type PaymentMode = 'Cash' | 'UPI / QR' | 'Cheque' | 'Bank Transfer (NEFT/
 
 export type InvoiceStatus = 'PAID' | 'PARTIAL' | 'UNPAID';
 
+export type AppLanguage = 'en' | 'hi';
+
+export type SubscriptionTier = 'free' | 'pro_monthly' | 'pro_yearly';
+
+export interface SubscriptionState {
+  tier: SubscriptionTier;
+  expiresAt?: string;
+  invoiceCountThisMonth: number;
+  monthKey: string; // e.g. "2026-09"
+  hasWatermark: boolean;
+  canUploadCustomLogo: boolean;
+  unlimitedInvoices: boolean;
+}
+
 export interface BusinessProfile {
   name: string;
   tagline: string;
@@ -23,6 +37,7 @@ export interface BusinessProfile {
   accountNumber: string;
   ifscCode: string;
   accountHolder: string;
+  logoUrl?: string;
   terms: string[];
 }
 
@@ -44,7 +59,7 @@ export interface VehicleDetails {
   model: string;
   variant?: string;
   registrationNo: string; // e.g., MH12 AB 1234 or "NEW / UNREGISTERED"
-  chassisNo: string; // VIN
+  chassisNo: string; // VIN (17 characters validation)
   engineMotorNo: string;
   manufacturingYear: number;
   color: string;
@@ -58,13 +73,32 @@ export interface VehicleDetails {
   hypothecationBank?: string; // Financed through
 }
 
+export interface ExchangeVehicle {
+  isExchange: boolean;
+  makeModel?: string;
+  registrationNo?: string;
+  chassisNo?: string;
+  manufacturingYear?: number;
+  exchangeValuation: number;
+}
+
+export interface FinancingDetails {
+  status: 'Cash' | 'Financed';
+  financierName?: string;
+  loanAccountNo?: string;
+  downPayment?: number;
+  loanAmount?: number;
+}
+
 export interface PricingAndPayment {
   basePrice: number;
   rtoCharges: number;
   insuranceCharges: number;
   accessoriesCharges: number;
   discount: number;
-  totalSaleValue: number;
+  exchangeValuation?: number; // Deducted from total
+  totalSaleValue: number; // Gross on-road value
+  netPayableAmount: number; // After discount & exchange
   advanceReceived: number;
   balanceAmount: number;
   paymentMode: PaymentMode;
@@ -77,6 +111,8 @@ export interface AutoDealerData {
   buyer: BuyerDetails;
   vehicle: VehicleDetails;
   pricing: PricingAndPayment;
+  exchange?: ExchangeVehicle;
+  financing?: FinancingDetails;
 }
 
 export interface RetailItem {
@@ -134,3 +170,43 @@ export interface SavedInvoice {
   createdAt: string;
   updatedAt: string;
 }
+
+export type AppView = 'home' | 'generate_bill' | 'sales' | 'parties' | 'items' | 'reports';
+
+export interface CustomerRecord {
+  id: string;
+  fullName: string;
+  phone: string;
+  altPhone?: string;
+  email?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
+  idType?: 'Aadhaar Card' | 'PAN Card' | 'Driving License' | 'Voter ID';
+  idNumber?: string;
+  gstin?: string;
+  openingBalance?: number;
+  balanceDue?: number;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface ProductRecord {
+  id: string;
+  name: string;
+  category: 'two_wheeler' | 'four_wheeler' | 'electric_vehicle' | 'commercial' | 'spare_parts' | 'goods' | 'service';
+  make?: string;
+  model?: string;
+  variant?: string;
+  hsn: string;
+  rate: number;
+  purchasePrice?: number;
+  gstPercent: number;
+  unit: string;
+  stockQty?: number;
+  minStockAlert?: number;
+  description?: string;
+  createdAt: string;
+}
+

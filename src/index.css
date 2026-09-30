@@ -13,33 +13,74 @@
   }
 }
 
+/* Page Break & Print Hygiene */
+.page-break-avoid,
+.avoid-break {
+  break-inside: avoid !important;
+  page-break-inside: avoid !important;
+}
+
+.page-break-before {
+  break-before: page !important;
+  page-break-before: always !important;
+}
+
+.page-break-after {
+  break-after: page !important;
+  page-break-after: always !important;
+}
+
+/* Physical Paper Print Rules */
 @media print {
-  body {
+  @page {
+    size: A4 portrait;
+    margin: 8mm 8mm 8mm 8mm;
+  }
+
+  html, body {
     background-color: #ffffff !important;
+    background: #ffffff !important;
     color: #000000 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
   }
 
-  .no-print {
+  /* Hide entire application navigation, sidebars, form inputs, drawer, and action buttons */
+  .no-print,
+  header,
+  footer,
+  aside,
+  nav,
+  form,
+  .sticky,
+  button,
+  input,
+  select,
+  textarea {
     display: none !important;
+    visibility: hidden !important;
   }
 
   .print-only {
     display: block !important;
+    visibility: visible !important;
   }
 
+  /* Make document fill physical A4 page crisp and borderless */
   .printable-document {
+    display: block !important;
+    visibility: visible !important;
     box-shadow: none !important;
     border: none !important;
-    margin: 0 !important;
-    padding: 0 !important;
+    margin: 0 auto !important;
+    padding: 2mm 4mm !important;
     width: 100% !important;
     max-width: 100% !important;
-  }
-
-  @page {
-    size: A4 portrait;
-    margin: 12mm 12mm 12mm 12mm;
+    min-height: auto !important;
+    background: #ffffff !important;
+    color: #000000 !important;
   }
 }

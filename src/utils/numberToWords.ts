@@ -1,9 +1,10 @@
 /**
- * Converts Indian currency numbers to words
- * e.g., 85400 -> "Eighty-Five Thousand Four Hundred Rupees Only"
+ * Converts Indian currency numbers to words strictly following Indian Numbering System
+ * (Crores, Lakhs, Thousands, Hundreds, Tens, Ones, and Paise)
+ * e.g., 85400.50 -> "Rupees Eighty-Five Thousand Four Hundred and Fifty Paise Only"
  */
 
-const ones = [
+const ones: string[] = [
   '',
   'One',
   'Two',
@@ -26,7 +27,7 @@ const ones = [
   'Nineteen',
 ];
 
-const tens = [
+const tens: string[] = [
   '',
   '',
   'Twenty',
@@ -55,12 +56,11 @@ function convertBelowThousand(n: number): string {
   return str.trim();
 }
 
-export function numberToWords(num: number): string {
-  if (!num || isNaN(num) || num <= 0) return 'Zero Rupees Only';
+function convertIntegerToWords(n: number): string {
+  if (n === 0) return 'Zero';
 
-  const rounded = Math.round(num);
-  let crore = Math.floor(rounded / 10000000);
-  let remainder = rounded % 10000000;
+  let crore = Math.floor(n / 10000000);
+  let remainder = n % 10000000;
 
   let lakh = Math.floor(remainder / 100000);
   remainder = remainder % 100000;
@@ -71,7 +71,7 @@ export function numberToWords(num: number): string {
   let result = '';
 
   if (crore > 0) {
-    result += convertBelowThousand(crore) + ' Crore ';
+    result += (crore >= 100 ? convertIntegerToWords(crore) : convertBelowThousand(crore)) + ' Crore ';
   }
   if (lakh > 0) {
     result += convertBelowThousand(lakh) + ' Lakh ';
@@ -83,14 +83,48 @@ export function numberToWords(num: number): string {
     result += convertBelowThousand(remainder) + ' ';
   }
 
-  return (result.trim() + ' Rupees Only').replace(/\s+/g, ' ');
+  return result.trim().replace(/\s+/g, ' ');
+}
+
+export function numberToWords(num: number): string {
+  if (num === undefined || num === null || isNaN(num) || num <= 0) {
+    return 'Zero Rupees Only';
+  }
+
+  const absNum = Math.abs(num);
+  const rupees = Math.floor(absNum);
+  const paise = Math.round((absNum - rupees) * 100);
+
+  let output = '';
+
+  if (rupees > 0) {
+    output = 'Rupees ' + convertIntegerToWords(rupees);
+  } else {
+    output = 'Rupees Zero';
+  }
+
+  if (paise > 0) {
+    output += ' and ' + convertBelowThousand(paise) + ' Paise';
+  }
+
+  return output.trim() + ' Only';
 }
 
 export function formatINR(val: number): string {
-  if (isNaN(val)) return '₹0';
+  if (isNaN(val) || val === undefined || val === null) return '₹0';
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency: 'INR',
     maximumFractionDigits: 0,
+  }).format(val);
+}
+
+export function formatINRWithDecimals(val: number): string {
+  if (isNaN(val) || val === undefined || val === null) return '₹0.00';
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(val);
 }

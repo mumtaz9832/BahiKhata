@@ -2,16 +2,37 @@ import React from 'react';
 import { SavedInvoice } from '../types';
 import { numberToWords, formatINR } from '../utils/numberToWords';
 import { QRCodeDisplay } from './QRCodeDisplay';
-import { Zap, ShieldCheck, CheckCircle } from 'lucide-react';
+import {
+  Zap,
+  ShieldCheck,
+  CheckCircle,
+  Printer,
+  Download,
+  MessageCircle,
+  QrCode,
+  Loader2,
+} from 'lucide-react';
 
 interface InvoiceDocumentProps {
   invoice: SavedInvoice;
   id?: string;
+  hasWatermark?: boolean;
+  onPrint?: () => void;
+  onDownloadPDF?: () => void;
+  onOpenWhatsApp?: () => void;
+  onOpenQR?: () => void;
+  isPdfGenerating?: boolean;
 }
 
 export const InvoiceDocument: React.FC<InvoiceDocumentProps> = ({
   invoice,
   id = 'printable-invoice-document',
+  hasWatermark = false,
+  onPrint,
+  onDownloadPDF,
+  onOpenWhatsApp,
+  onOpenQR,
+  isPdfGenerating = false,
 }) => {
   const profile = invoice.businessProfile;
   const isAuto = invoice.mode === 'auto_dealer' && invoice.autoData;
@@ -19,22 +40,22 @@ export const InvoiceDocument: React.FC<InvoiceDocumentProps> = ({
   const retail = invoice.retailData;
 
   const totalAmount = isAuto
-    ? auto?.pricing.totalSaleValue || 0
+    ? auto?.pricing?.totalSaleValue || 0
     : retail?.grandTotal || 0;
 
   const advanceAmount = isAuto
-    ? auto?.pricing.advanceReceived || 0
+    ? auto?.pricing?.advanceReceived || 0
     : retail?.advanceReceived || 0;
 
   const balanceAmount = isAuto
-    ? auto?.pricing.balanceAmount || 0
+    ? auto?.pricing?.balanceAmount || 0
     : retail?.balanceAmount || 0;
 
   const paymentMode = isAuto
-    ? auto?.pricing.paymentMode || 'Cash'
+    ? auto?.pricing?.paymentMode || 'Cash'
     : retail?.paymentMode || 'Cash';
 
-  const transactionRef = isAuto ? auto?.pricing.transactionRef : retail?.transactionRef;
+  const transactionRef = isAuto ? auto?.pricing?.transactionRef : retail?.transactionRef;
 
   const isEV = isAuto && auto?.vehicle.vehicleType === 'electric_vehicle';
 
@@ -44,6 +65,78 @@ export const InvoiceDocument: React.FC<InvoiceDocumentProps> = ({
       className="printable-document bg-white text-slate-900 p-6 sm:p-8 rounded-xl shadow-lg border border-slate-200 text-xs leading-relaxed max-w-[850px] mx-auto transition-all"
       style={{ minHeight: '1100px' }}
     >
+      {/* Quick Action Toolbar (Visible on screen, Hidden in Print) */}
+      {(onPrint || onDownloadPDF || onOpenWhatsApp || onOpenQR) && (
+        <div className="no-print mb-6 p-3 bg-slate-900 text-white rounded-xl flex flex-wrap items-center justify-between gap-2 shadow-xs">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-400" />
+            <span className="font-bold text-xs uppercase tracking-wide">
+              {isAuto ? 'Vehicle Tax & Sale Bill' : 'Tax Invoice'}
+            </span>
+            <span className="text-slate-400 text-[11px] font-mono">#{invoice.invoiceNo}</span>
+          </div>
+
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {onPrint && (
+              <button
+                type="button"
+                onClick={onPrint}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-slate-900 hover:bg-slate-100 font-bold rounded-lg text-xs transition-colors cursor-pointer"
+                title="Print this invoice directly"
+              >
+                <Printer className="w-3.5 h-3.5 text-slate-700" />
+                <span>Print Bill</span>
+              </button>
+            )}
+
+            {onDownloadPDF && (
+              <button
+                type="button"
+                onClick={onDownloadPDF}
+                disabled={isPdfGenerating}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold rounded-lg text-xs transition-colors cursor-pointer disabled:opacity-50"
+                title="Download A4 PDF format"
+              >
+                {isPdfGenerating ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>PDF...</span>
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-3.5 h-3.5 text-slate-950" />
+                    <span>Download PDF</span>
+                  </>
+                )}
+              </button>
+            )}
+
+            {onOpenWhatsApp && (
+              <button
+                type="button"
+                onClick={onOpenWhatsApp}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs transition-colors cursor-pointer"
+                title="Share invoice on WhatsApp"
+              >
+                <MessageCircle className="w-3.5 h-3.5" />
+                <span>WhatsApp</span>
+              </button>
+            )}
+
+            {onOpenQR && profile.upiId && (
+              <button
+                type="button"
+                onClick={onOpenQR}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-lg text-xs transition-colors cursor-pointer border border-slate-700"
+                title="Open counter QR for customer"
+              >
+                <QrCode className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Dynamic UPI QR</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       {/* 1. Header & Dealership Branding */}
       <div className="flex justify-between items-start border-b-2 border-slate-900 pb-5 mb-5 gap-4">
         <div>
@@ -334,7 +427,7 @@ export const InvoiceDocument: React.FC<InvoiceDocumentProps> = ({
               <p className="mt-1 text-amber-800 font-semibold bg-amber-50 p-1.5 rounded border border-amber-200">
                 &bull; Balance ₹{balanceAmount.toLocaleString('en-IN')} is due on or before{' '}
                 <span className="underline font-mono">
-                  {isAuto ? auto?.pricing.balanceDueDate : retail?.balanceDueDate || 'Handover'}
+                  {isAuto ? (auto?.pricing?.balanceDueDate || 'Handover') : (retail?.balanceDueDate || 'Handover')}
                 </span>
                 .
               </p>
@@ -345,7 +438,7 @@ export const InvoiceDocument: React.FC<InvoiceDocumentProps> = ({
               </p>
             )}
 
-            {isAuto && auto?.pricing.notes && (
+            {isAuto && auto?.pricing?.notes && (
               <p className="mt-2 text-slate-600">
                 <span className="font-medium text-slate-700">Remarks:</span> {auto.pricing.notes}
               </p>
@@ -357,27 +450,27 @@ export const InvoiceDocument: React.FC<InvoiceDocumentProps> = ({
         <div className="border border-slate-200 rounded-lg overflow-hidden">
           <table className="w-full text-xs">
             <tbody>
-              {isAuto && auto ? (
+              {isAuto && auto && auto.pricing ? (
                 <>
                   <tr className="border-b border-slate-100">
                     <td className="p-2 text-slate-600">Vehicle Base / Ex-Showroom</td>
                     <td className="p-2 text-right font-mono font-medium">
-                      ₹{auto.pricing.basePrice.toLocaleString('en-IN')}
+                      ₹{(auto.pricing.basePrice || 0).toLocaleString('en-IN')}
                     </td>
                   </tr>
                   <tr className="border-b border-slate-100">
                     <td className="p-2 text-slate-600">RTO Tax &amp; Smartcard Reg</td>
                     <td className="p-2 text-right font-mono font-medium">
-                      ₹{auto.pricing.rtoCharges.toLocaleString('en-IN')}
+                      ₹{(auto.pricing.rtoCharges || 0).toLocaleString('en-IN')}
                     </td>
                   </tr>
                   <tr className="border-b border-slate-100">
                     <td className="p-2 text-slate-600">Comprehensive Insurance</td>
                     <td className="p-2 text-right font-mono font-medium">
-                      ₹{auto.pricing.insuranceCharges.toLocaleString('en-IN')}
+                      ₹{(auto.pricing.insuranceCharges || 0).toLocaleString('en-IN')}
                     </td>
                   </tr>
-                  {auto.pricing.accessoriesCharges > 0 && (
+                  {(auto.pricing.accessoriesCharges || 0) > 0 && (
                     <tr className="border-b border-slate-100">
                       <td className="p-2 text-slate-600">Accessories / Special Kits</td>
                       <td className="p-2 text-right font-mono font-medium">
@@ -385,7 +478,7 @@ export const InvoiceDocument: React.FC<InvoiceDocumentProps> = ({
                       </td>
                     </tr>
                   )}
-                  {auto.pricing.discount > 0 && (
+                  {(auto.pricing.discount || 0) > 0 && (
                     <tr className="border-b border-slate-100 text-rose-600">
                       <td className="p-2">Discount / Dealer Subsidy (-)</td>
                       <td className="p-2 text-right font-mono font-semibold">
@@ -448,7 +541,7 @@ export const InvoiceDocument: React.FC<InvoiceDocumentProps> = ({
       </div>
 
       {/* 5. UPI QR Code, Bank Account Details & Terms */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 border-t border-slate-300 pt-4 mb-6 items-center">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 border-t border-slate-300 pt-4 mb-6 items-center avoid-break page-break-avoid">
         {/* Bank Details */}
         <div className="text-[11px] text-slate-600 space-y-0.5 sm:col-span-2">
           <div className="font-bold uppercase text-[10px] text-slate-800 tracking-wider mb-1">
@@ -488,7 +581,7 @@ export const InvoiceDocument: React.FC<InvoiceDocumentProps> = ({
       </div>
 
       {/* 6. Signature Blocks */}
-      <div className="grid grid-cols-2 gap-8 pt-8 border-t border-slate-300 text-center">
+      <div className="grid grid-cols-2 gap-8 pt-8 border-t border-slate-300 text-center avoid-break page-break-avoid">
         <div>
           <div className="h-12 flex items-end justify-center">
             <span className="text-[11px] text-slate-400 italic">Signature on handover</span>
@@ -510,7 +603,18 @@ export const InvoiceDocument: React.FC<InvoiceDocumentProps> = ({
         </div>
       </div>
 
-      <div className="text-center text-[9px] text-slate-400 mt-6 pt-2 border-t border-slate-100">
+      {/* Watermark for Free Tier */}
+      {hasWatermark && (
+        <div className="mt-4 pt-2 border-t border-slate-200 text-center avoid-break page-break-avoid">
+          <div className="inline-flex items-center gap-2 px-3 py-1 bg-slate-50 text-slate-500 border border-slate-200 rounded-full text-[10px] font-semibold">
+            <span>⚡ Powered by BahiKhata</span>
+            <span className="text-slate-300">&bull;</span>
+            <span className="text-amber-700">Free Tier</span>
+          </div>
+        </div>
+      )}
+
+      <div className="text-center text-[9px] text-slate-400 mt-4 pt-2 border-t border-slate-100">
         This is a computer-generated tax &amp; sale invoice generated via AutoBill &amp; Smart Khata.
       </div>
     </div>

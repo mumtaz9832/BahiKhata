@@ -19,6 +19,7 @@ import {
   Car,
   Store,
   Database,
+  Cloud,
 } from 'lucide-react';
 import { exportBackupData, importBackupData } from '../utils/storage';
 
@@ -31,6 +32,7 @@ interface KhataLedgerProps {
   onRecordPayment: (invoiceId: string, amount: number, mode: PaymentMode, note: string) => void;
   onOpenWhatsApp: (invoice: SavedInvoice) => void;
   onRefreshInvoices: () => void;
+  onOpenDriveModal?: () => void;
 }
 
 export const KhataLedger: React.FC<KhataLedgerProps> = ({
@@ -42,6 +44,7 @@ export const KhataLedger: React.FC<KhataLedgerProps> = ({
   onRecordPayment,
   onOpenWhatsApp,
   onRefreshInvoices,
+  onOpenDriveModal,
 }) => {
   if (!isOpen) return null;
 
@@ -74,7 +77,7 @@ export const KhataLedger: React.FC<KhataLedgerProps> = ({
       vehicle.toLowerCase().includes(searchQuery.toLowerCase());
 
     const balance = isAuto
-      ? inv.autoData?.pricing.balanceAmount || 0
+      ? inv.autoData?.pricing?.balanceAmount || 0
       : inv.retailData?.balanceAmount || 0;
 
     if (!matchesSearch) return false;
@@ -89,7 +92,7 @@ export const KhataLedger: React.FC<KhataLedgerProps> = ({
   invoices.forEach((inv) => {
     const bal =
       inv.mode === 'auto_dealer'
-        ? inv.autoData?.pricing.balanceAmount || 0
+        ? inv.autoData?.pricing?.balanceAmount || 0
         : inv.retailData?.balanceAmount || 0;
     totalReceivable += bal;
   });
@@ -97,7 +100,7 @@ export const KhataLedger: React.FC<KhataLedgerProps> = ({
   const handleOpenPaymentDialog = (inv: SavedInvoice) => {
     const bal =
       inv.mode === 'auto_dealer'
-        ? inv.autoData?.pricing.balanceAmount || 0
+        ? inv.autoData?.pricing?.balanceAmount || 0
         : inv.retailData?.balanceAmount || 0;
     setActivePaymentInvoice(inv);
     setPaymentAmount(bal);
@@ -166,6 +169,18 @@ export const KhataLedger: React.FC<KhataLedgerProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            {onOpenDriveModal && (
+              <button
+                type="button"
+                onClick={onOpenDriveModal}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-300 hover:text-white bg-blue-900/60 hover:bg-blue-900 rounded-lg border border-blue-700/60 transition-colors cursor-pointer"
+                title="Backup or restore Khata from Google Drive"
+              >
+                <Cloud className="w-3.5 h-3.5 text-blue-400" />
+                <span>Drive Cloud Sync</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={handleExportBackup}
@@ -288,16 +303,16 @@ export const KhataLedger: React.FC<KhataLedgerProps> = ({
                 ? `${inv.autoData?.vehicle.make} ${inv.autoData?.vehicle.model} (${inv.autoData?.vehicle.registrationNo || 'New'})`
                 : 'General Items';
               const total = isAuto
-                ? inv.autoData?.pricing.totalSaleValue || 0
+                ? inv.autoData?.pricing?.totalSaleValue || 0
                 : inv.retailData?.grandTotal || 0;
               const advance = isAuto
-                ? inv.autoData?.pricing.advanceReceived || 0
+                ? inv.autoData?.pricing?.advanceReceived || 0
                 : inv.retailData?.advanceReceived || 0;
               const balance = isAuto
-                ? inv.autoData?.pricing.balanceAmount || 0
+                ? inv.autoData?.pricing?.balanceAmount || 0
                 : inv.retailData?.balanceAmount || 0;
               const dueDate = isAuto
-                ? inv.autoData?.pricing.balanceDueDate
+                ? inv.autoData?.pricing?.balanceDueDate
                 : inv.retailData?.balanceDueDate;
 
               return (
@@ -438,11 +453,11 @@ export const KhataLedger: React.FC<KhataLedgerProps> = ({
           )}
         </div>
 
-        {/* Cloud Migration Ready Footer */}
+        {/* Cloud Migration & Drive Sync Ready Footer */}
         <div className="p-3 bg-slate-100 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-500 gap-2">
-          <div className="flex items-center gap-1.5">
-            <Database className="w-3.5 h-3.5 text-slate-600" />
-            <span>Storage: <strong>Offline LocalStorage Active</strong> &bull; Migration ready for Supabase / Firebase cloud sync.</span>
+          <div className="flex items-center gap-2">
+            <Cloud className="w-3.5 h-3.5 text-blue-600" />
+            <span>Google Drive: <strong>"AutoBill &amp; Smart Khata Invoices"</strong> sync enabled &bull; Local offline cache active.</span>
           </div>
           <span className="font-mono text-slate-600">
             {invoices.length} total entries stored locally

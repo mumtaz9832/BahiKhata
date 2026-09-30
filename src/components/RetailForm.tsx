@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { RetailData, RetailItem, PaymentMode } from '../types';
 import {
   User,
@@ -26,6 +26,7 @@ export const RetailForm: React.FC<RetailFormProps> = ({
   invoiceDate,
   onInvoiceDateChange,
 }) => {
+  const [focusTab, setFocusTab] = useState<'all' | 'customer' | 'items' | 'settlement'>('all');
   const recalculateTotals = (items: RetailItem[], discountVal: number, advanceVal: number) => {
     let subtotal = 0;
     let totalGst = 0;
@@ -166,7 +167,56 @@ export const RetailForm: React.FC<RetailFormProps> = ({
         </div>
       </div>
 
+      {/* Focus Mode Navigation Bar */}
+      <div className="bg-slate-100 p-1 rounded-xl flex items-center gap-1 overflow-x-auto border border-slate-200 shadow-inner">
+        <button
+          type="button"
+          onClick={() => setFocusTab('all')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer shrink-0 ${
+            focusTab === 'all'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+          }`}
+        >
+          All Sections
+        </button>
+        <button
+          type="button"
+          onClick={() => setFocusTab('customer')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer shrink-0 ${
+            focusTab === 'customer'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+          }`}
+        >
+          1. Customer Details
+        </button>
+        <button
+          type="button"
+          onClick={() => setFocusTab('items')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer shrink-0 ${
+            focusTab === 'items'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+          }`}
+        >
+          2. Items &amp; Products ({data.items.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setFocusTab('settlement')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer shrink-0 ${
+            focusTab === 'settlement'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+          }`}
+        >
+          3. Total &amp; Payment
+        </button>
+      </div>
+
       {/* Customer Info */}
+      {(focusTab === 'all' || focusTab === 'customer') && (
       <div className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-xs">
         <div className="flex items-center gap-2 mb-4 border-b border-slate-100 pb-2">
           <User className="w-4 h-4 text-slate-700" />
@@ -228,8 +278,10 @@ export const RetailForm: React.FC<RetailFormProps> = ({
           </div>
         </div>
       </div>
+      )}
 
       {/* Items Table */}
+      {(focusTab === 'all' || focusTab === 'items') && (
       <div className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-xs">
         <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-2">
           <div className="flex items-center gap-2">
@@ -346,8 +398,10 @@ export const RetailForm: React.FC<RetailFormProps> = ({
           ))}
         </div>
       </div>
+      )}
 
       {/* Pricing & Settlement */}
+      {(focusTab === 'all' || focusTab === 'settlement') && (
       <div className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-xs">
         <div className="flex items-center gap-2 mb-4 border-b border-slate-100 pb-2">
           <IndianRupee className="w-4 h-4 text-slate-700" />
@@ -426,6 +480,7 @@ export const RetailForm: React.FC<RetailFormProps> = ({
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 };
