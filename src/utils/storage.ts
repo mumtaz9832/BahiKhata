@@ -7,6 +7,8 @@ import {
   CustomerRecord,
   ProductRecord,
 } from '../types';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { db } from './firebase';
 
 const STORAGE_KEY_INVOICES = 'bahikhata_invoices_v2';
 const STORAGE_KEY_PROFILE = 'bahikhata_business_profile_v2';
@@ -20,22 +22,49 @@ const IDB_VERSION = 1;
 const IDB_STORE = 'keyval_store';
 
 export const DEFAULT_BUSINESS_PROFILE: BusinessProfile = {
-  name: 'Vyapar & Zoho Books Dealership',
-  tagline: 'GST Invoicing, Delivery Challans, Customer Khata & Stock Inventory',
+  name: 'BahiKhata Business',
+  businessName: 'BahiKhata Business',
+  tagline: 'Smart Billing, Digital Khata, GST, Inventory & Business Management',
+  businessType: 'sales_and_service',
+  industryType: 'Automobile & Electric Vehicles (EV)',
+  salesCategories: ['Electric Vehicle', 'Battery', 'Spare Parts'],
+  serviceCategories: ['EV Repair & Service', 'Battery Repair', 'Vehicle General Service'],
   address: '',
   city: '',
   state: '',
   pincode: '',
+  country: 'India',
   phone: '',
   altPhone: '',
   email: '',
+  gstRegistered: false,
   gstin: '',
+  gstLegalName: '',
+  gstState: '',
   dealerCode: '',
+  documents: [],
+  billingType: 'Non-GST',
+  gstCalculationMode: 'Exclusive',
+  defaultGstRate: 18,
+  paymentMethods: ['Cash', 'UPI', 'Bank Transfer'],
   upiId: '',
   bankName: '',
   accountNumber: '',
   ifscCode: '',
   accountHolder: '',
+  registrationCompleted: false,
+  onboardingCompleted: false,
+  activeModules: [
+    'EV Billing',
+    'Vehicle Details',
+    'Chassis Number',
+    'Motor Number',
+    'Battery Number',
+    'Customer Khata',
+    'Inventory',
+    'Job Card',
+    'Reports',
+  ],
   terms: [
     'Subject to local jurisdiction only.',
     'Delivery will be given only against receipt of 100% realized payment.',
@@ -208,22 +237,49 @@ export function getBusinessProfile(): BusinessProfile {
     const raw = localStorage.getItem(STORAGE_KEY_PROFILE);
     if (raw) {
       const parsed = JSON.parse(raw);
-      // If user had previous hardcoded demo business details, strip false data
+      // If user had previous hardcoded demo or wrong branding details, strip false data
       if (
         parsed.gstin === '27AABCU9603R1ZM' ||
         parsed.phone === '+91 98765 43210' ||
-        parsed.name === 'Apex Motors & EV Hub'
+        parsed.name === 'Apex Motors & EV Hub' ||
+        parsed.name === 'Vyapar & Zoho Books Dealership'
       ) {
         const cleaned: BusinessProfile = {
           ...DEFAULT_BUSINESS_PROFILE,
-          name: parsed.name === 'Apex Motors & EV Hub' ? DEFAULT_BUSINESS_PROFILE.name : parsed.name,
+          name:
+            parsed.name === 'Apex Motors & EV Hub' ||
+            parsed.name === 'Vyapar & Zoho Books Dealership'
+              ? DEFAULT_BUSINESS_PROFILE.name
+              : parsed.name,
         };
         memoryProfile = cleaned;
         saveBusinessProfile(cleaned);
         return cleaned;
       }
-      memoryProfile = { ...DEFAULT_BUSINESS_PROFILE, ...parsed };
-      return memoryProfile!;
+
+      // Safe migration for existing users:
+      // If user already had custom details or has been onboarded, preserve them and mark registrationCompleted: true
+      const hasExistingBusiness =
+        Boolean(parsed.phone && parsed.phone !== '+91 98765 43210') ||
+        Boolean(parsed.name && parsed.name !== 'BahiKhata Business') ||
+        localStorage.getItem('bahikhata_onboarded') === 'true';
+
+      const merged: BusinessProfile = {
+        ...DEFAULT_BUSINESS_PROFILE,
+        ...parsed,
+        businessName: parsed.businessName || parsed.name || DEFAULT_BUSINESS_PROFILE.name,
+        registrationCompleted:
+          parsed.registrationCompleted !== undefined
+            ? parsed.registrationCompleted
+            : hasExistingBusiness,
+        onboardingCompleted:
+          parsed.onboardingCompleted !== undefined
+            ? parsed.onboardingCompleted
+            : hasExistingBusiness,
+      };
+
+      memoryProfile = merged;
+      return memoryProfile;
     }
   } catch {}
 
@@ -239,6 +295,66 @@ export function saveBusinessProfile(profile: BusinessProfile): void {
   } catch (err) {
     console.error('Error saving business profile:', err);
   }
+}
+
+export async function syncProfileToFirestore(
+  profile: BusinessProfile,
+  userId?: string
+): Promise<void> {
+  const targetUid = userId || profile.userId;
+  if (!targetUid) return;
+
+  try {
+    const profileRef = doc(db, 'users', targetUid, 'profile', 'business');
+    // Sanitize document metadata: do not store large base64 data URLs in Firestore
+    const sanitizedDocuments = (profile.documents || []).map((docItem) => ({
+      id: docItem.id,
+      type: docItem.type,
+      title: docItem.title,
+      requirement: docItem.requirement,
+      fileName: docItem.fileName || '',
+      fileSize: docItem.fileSize || 0,
+      fileType: docItem.fileType || '',
+      storagePath: docItem.storagePath || '',
+      uploadedAt: docItem.uploadedAt || '',
+      verificationStatus: docItem.verificationStatus || 'NOT_UPLOADED',
+    }));
+
+    await setDoc(
+      profileRef,
+      {
+        ...profile,
+        documents: sanitizedDocuments,
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
+  } catch (err) {
+    console.warn('Firestore profile sync failed (offline or quota):', err);
+  }
+}
+
+export async function loadProfileFromFirestore(
+  userId: string
+): Promise<BusinessProfile | null> {
+  if (!userId) return null;
+  try {
+    const profileRef = doc(db, 'users', userId, 'profile', 'business');
+    const snap = await getDoc(profileRef);
+    if (snap.exists()) {
+      const data = snap.data() as Partial<BusinessProfile>;
+      const merged: BusinessProfile = {
+        ...getBusinessProfile(),
+        ...data,
+        userId,
+      };
+      saveBusinessProfile(merged);
+      return merged;
+    }
+  } catch (err) {
+    console.warn('Could not fetch profile from Firestore:', err);
+  }
+  return null;
 }
 
 export function getSavedInvoices(): SavedInvoice[] {

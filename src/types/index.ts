@@ -20,18 +20,65 @@ export interface SubscriptionState {
   unlimitedInvoices: boolean;
 }
 
+export type BusinessType = 'sales' | 'service' | 'sales_and_service';
+
+export type DocumentRequirement = 'REQUIRED' | 'OPTIONAL' | 'NOT_REQUIRED';
+
+export interface BusinessDocument {
+  id: string;
+  type: string;
+  title: string;
+  requirement: DocumentRequirement;
+  fileName?: string;
+  fileSize?: number;
+  fileType?: string;
+  storagePath?: string;
+  fileDataUrl?: string;
+  uploadedAt?: string;
+  verificationStatus: 'NOT_UPLOADED' | 'PENDING' | 'VERIFIED' | 'REJECTED';
+}
+
 export interface BusinessProfile {
-  name: string;
+  // Core & Identification
+  userId?: string;
+  fullName?: string;
+  email: string;
+  phone: string;
+  altPhone?: string;
+
+  // Trading details
+  name: string; // Business/Shop name
+  businessName?: string; // Explicit alias for registration form
   tagline: string;
+  businessType?: BusinessType;
+  industryType?: string;
+  salesCategories?: string[];
+  serviceCategories?: string[];
+
+  // Location
   address: string;
   city: string;
   state: string;
   pincode: string;
-  phone: string;
-  altPhone?: string;
-  email: string;
+  country?: string;
+
+  // Tax & Legal
+  gstRegistered?: boolean;
   gstin?: string;
+  gstLegalName?: string;
+  gstState?: string;
   dealerCode?: string;
+
+  // Documents
+  documents?: BusinessDocument[];
+
+  // Invoicing & Finance
+  billingType?: 'GST' | 'Non-GST';
+  gstCalculationMode?: 'Inclusive' | 'Exclusive';
+  defaultGstRate?: number;
+  paymentMethods?: string[];
+
+  // Payment Accounts
   upiId: string;
   bankName: string;
   accountNumber: string;
@@ -39,6 +86,21 @@ export interface BusinessProfile {
   accountHolder: string;
   logoUrl?: string;
   terms: string[];
+
+  // Registration & Verification fields
+  mobileNumber?: string;
+  businessAddress?: string;
+  gstNumber?: string;
+  mobileVerified?: boolean;
+  emailVerified?: boolean;
+
+  // Onboarding & Module states
+  registrationCompleted?: boolean;
+  onboardingCompleted?: boolean;
+  activeModules?: string[];
+  authMethod?: 'google' | 'email_mobile';
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface BuyerDetails {

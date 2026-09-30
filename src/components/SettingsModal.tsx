@@ -8,6 +8,7 @@ interface SettingsModalProps {
   profile: BusinessProfile;
   onSave: (updated: BusinessProfile) => void;
   onClearAllData?: () => void;
+  onOpenRegistrationWizard?: () => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -16,6 +17,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   profile,
   onSave,
   onClearAllData,
+  onOpenRegistrationWizard,
 }) => {
   if (!isOpen) return null;
 
@@ -66,6 +68,30 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         {/* Form Body */}
         <form onSubmit={handleSave} className="flex-1 overflow-y-auto p-5 space-y-5 text-xs">
+          {onOpenRegistrationWizard && (
+            <div className="p-3.5 bg-gradient-to-r from-amber-50 to-indigo-50/50 border border-amber-200/80 rounded-2xl flex items-center justify-between gap-3">
+              <div>
+                <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-amber-600" />
+                  <span>Business Registration &amp; Onboarding Wizard</span>
+                </div>
+                <p className="text-[11px] text-slate-600 mt-0.5">
+                  Re-configure multi-step registration, tax setup, documents, and activated modules.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenRegistrationWizard();
+                }}
+                className="px-3.5 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold rounded-xl text-xs transition-colors shrink-0 shadow-2xs cursor-pointer"
+              >
+                Launch Wizard
+              </button>
+            </div>
+          )}
+
           {/* Dealership Identity */}
           <div className="space-y-3">
             <h3 className="font-bold text-slate-900 text-xs uppercase tracking-wider border-b border-slate-100 pb-1.5">

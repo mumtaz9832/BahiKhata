@@ -12,6 +12,7 @@ import {
   MessageCircle,
   QrCode,
   Loader2,
+  Mail,
 } from 'lucide-react';
 
 interface DeliveryChallanDocumentProps {
@@ -20,9 +21,11 @@ interface DeliveryChallanDocumentProps {
   hasWatermark?: boolean;
   onPrint?: () => void;
   onDownloadPDF?: () => void;
+  onShareViaEmail?: () => void;
   onOpenWhatsApp?: () => void;
   onOpenQR?: () => void;
   isPdfGenerating?: boolean;
+  isEmailPreparing?: boolean;
 }
 
 export const DeliveryChallanDocument: React.FC<DeliveryChallanDocumentProps> = ({
@@ -31,9 +34,11 @@ export const DeliveryChallanDocument: React.FC<DeliveryChallanDocumentProps> = (
   hasWatermark = false,
   onPrint,
   onDownloadPDF,
+  onShareViaEmail,
   onOpenWhatsApp,
   onOpenQR,
   isPdfGenerating = false,
+  isEmailPreparing = false,
 }) => {
   const profile = invoice.businessProfile;
   const isAuto = invoice.mode === 'auto_dealer' && invoice.autoData;
@@ -99,6 +104,28 @@ export const DeliveryChallanDocument: React.FC<DeliveryChallanDocumentProps> = (
                   <>
                     <Download className="w-3.5 h-3.5 text-slate-950" />
                     <span>Download PDF</span>
+                  </>
+                )}
+              </button>
+            )}
+
+            {onShareViaEmail && (
+              <button
+                type="button"
+                onClick={onShareViaEmail}
+                disabled={isEmailPreparing}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg text-xs transition-colors cursor-pointer disabled:opacity-50"
+                title="Trigger email draft with attached PDF challan"
+              >
+                {isEmailPreparing ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Email...</span>
+                  </>
+                ) : (
+                  <>
+                    <Mail className="w-3.5 h-3.5" />
+                    <span>Share via Email</span>
                   </>
                 )}
               </button>

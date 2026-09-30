@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   BusinessProfile,
   SavedInvoice,
@@ -36,6 +36,8 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { openWhatsAppCustomerReminder } from '../utils/whatsapp';
+import { User } from 'firebase/auth';
+import { BahiKhataLogo } from './BahiKhataLogo';
 
 interface HomePageProps {
   profile: BusinessProfile;
@@ -45,6 +47,9 @@ interface HomePageProps {
   lang: AppLanguage;
   customers: CustomerRecord[];
   products: ProductRecord[];
+  user?: User | null;
+  onOpenAuthModal?: () => void;
+  syncStatus?: 'synced' | 'offline';
   onGenerateBill: () => void;
   onAddCustomer: () => void;
   onAddProduct: () => void;
@@ -69,6 +74,9 @@ export const HomePage: React.FC<HomePageProps> = ({
   lang,
   customers,
   products,
+  user,
+  onOpenAuthModal,
+  syncStatus = 'offline',
   onGenerateBill,
   onAddCustomer,
   onAddProduct,
@@ -156,86 +164,118 @@ export const HomePage: React.FC<HomePageProps> = ({
     setActivePaymentInvoice(null);
   };
 
+  const greeting = useMemo(() => {
+    const hour = new Date().getHours();
+    if (hour < 12) return isHindi ? 'सुप्रभात' : 'Good morning';
+    if (hour < 17) return isHindi ? 'नमस्कार' : 'Good afternoon';
+    return isHindi ? 'शुभ संध्या' : 'Good evening';
+  }, [isHindi]);
+
+  const todaySales = useMemo(() => {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    return invoices
+      .filter((inv) => inv.invoiceDate === todayStr)
+      .reduce((sum, inv) => {
+        const val =
+          inv.mode === 'auto_dealer'
+            ? inv.autoData?.pricing?.totalSaleValue || 0
+            : inv.retailData?.grandTotal || 0;
+        return sum + val;
+      }, 0);
+  }, [invoices]);
+
   return (
     <div className="space-y-7 animate-in fade-in duration-200">
-      {/* 1. Welcoming Business Banner (Zoho / Vyapar Header) */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white rounded-3xl p-6 sm:p-7 shadow-xl border border-slate-700/60 relative overflow-hidden">
-        <div className="absolute right-0 top-0 -mt-10 -mr-10 w-72 h-72 rounded-full bg-amber-400/10 blur-3xl pointer-events-none" />
-        <div className="absolute left-1/3 bottom-0 w-64 h-64 rounded-full bg-indigo-500/10 blur-3xl pointer-events-none" />
-
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-5">
-          <div className="space-y-1.5">
+      {/* 1. Welcoming Business Banner (Clean Light White Theme) */}
+      <div className="bg-white rounded-2xl sm:rounded-3xl p-5 sm:p-6 shadow-2xs border border-slate-200/90 relative overflow-hidden">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
+          <div className="space-y-2.5">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[11px] font-black uppercase tracking-wider bg-amber-400 text-slate-950 px-2.5 py-0.5 rounded-full shadow-2xs">
-                {mode === 'auto_dealer'
-                  ? (isHindi ? '🚗 ऑटो डीलरशिप मोड (2W/4W/EV)' : '🚗 Auto Dealership Mode (2W/4W/EV)')
-                  : (isHindi ? '🏪 जनरल रिटेल मोड' : '🏪 General Retail Mode')}
+              <span className="text-[11px] font-black uppercase tracking-wider bg-amber-100 text-amber-950 px-2.5 py-0.5 rounded-full border border-amber-200 shadow-2xs">
+                {profile.businessType === 'service'
+                  ? (isHindi ? '🔧 सर्विस व वर्कशॉप' : '🔧 Service & Workshop')
+                  : profile.businessType === 'sales_and_service'
+                  ? (isHindi ? '⚡ सेल्स + सर्विस हब' : '⚡ Sales & Service Hub')
+                  : (isHindi ? '🏷️ सेल्स व बिलिंग' : '🏷️ Sales & Billing')}
               </span>
               {isPro ? (
-                <span className="inline-flex items-center gap-1 text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-400/30 px-2.5 py-0.5 rounded-full">
-                  <Crown className="w-3 h-3 text-amber-400" /> Pro Active
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold bg-amber-50 text-amber-900 border border-amber-300 px-2.5 py-0.5 rounded-full">
+                  <Crown className="w-3 h-3 text-amber-600" /> Pro Active
                 </span>
               ) : (
-                <span className="text-[11px] text-slate-400 bg-slate-800/80 px-2.5 py-0.5 rounded-full">
+                <span className="text-[11px] text-slate-600 bg-slate-100 border border-slate-200 px-2.5 py-0.5 rounded-full font-medium">
                   Starter ({subscription.invoiceCountThisMonth}/5 Bills)
                 </span>
               )}
             </div>
 
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
-              {profile.name || (isHindi ? 'व्यापार एवं जोहो बुक्स सूट' : 'Vyapar & Zoho Books Dealership')}
-            </h1>
-            <p className="text-xs text-slate-300 max-w-2xl font-normal leading-relaxed">
+            <div className="flex items-center gap-3">
+              <div className="hidden sm:flex shrink-0 bg-amber-50 p-2 rounded-2xl border border-amber-200 shadow-2xs">
+                <BahiKhataLogo variant="icon" size="sm" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-amber-800">
+                  {greeting}, {user?.displayName || profile.fullName || 'Merchant'} 👋
+                </p>
+                <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900">
+                  {profile.name || profile.businessName || (isHindi ? 'बहीखाता बिज़नेस' : 'BahiKhata Business')}
+                </h1>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-500 max-w-2xl font-normal leading-relaxed">
               {profile.tagline ||
-                'Vyapar & Zoho Books Accounting: GST Invoicing, Delivery Challans, Customer Khata & Inventory'}
+                (isHindi
+                  ? 'स्मार्ट बिलिंग, डिजिटल खाता, जीएसटी, इन्वेंट्री व बिज़नेस मैनेजमेंट'
+                  : 'Smart Billing, Digital Khata, GST, Inventory & Business Management')}
             </p>
 
-            <div className="flex flex-wrap items-center gap-3 pt-1 text-xs text-slate-400">
-              {invoices.length === 0 && (
-                <span className="inline-flex items-center gap-1 bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 px-2.5 py-0.5 rounded-full text-[11px] font-bold">
-                  <Sparkles className="w-3 h-3 text-emerald-400" />
-                  {isHindi ? 'डैशबोर्ड साफ है • कोई फर्जी डेटा नहीं' : 'Clean Dashboard • No False Data'}
+            <div className="flex flex-wrap items-center gap-3 pt-1 text-xs text-slate-500">
+              {/* Cloud / Offline Auth Indicator */}
+              {user ? (
+                <span className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-0.5 rounded-full text-[11px] font-bold">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  {isHindi ? 'क्लाउड सिंक' : 'Cloud Synced'}
+                  {user.email && <span className="opacity-75 font-normal">({user.email})</span>}
                 </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={onOpenAuthModal}
+                  className="inline-flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-0.5 rounded-full text-[11px] font-bold cursor-pointer transition-colors"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                  <span>{isHindi ? 'ऑफलाइन मोड • लॉगिन करें' : 'Working Offline • Login'}</span>
+                </button>
               )}
+
               {profile.gstin && (
-                <span className="bg-slate-800/90 px-2 py-0.5 rounded font-mono text-[11px] text-slate-300 border border-slate-700">
+                <span className="bg-slate-100 px-2 py-0.5 rounded font-mono text-[11px] text-slate-700 border border-slate-200 font-bold">
                   GSTIN: {profile.gstin}
                 </span>
               )}
-              {profile.city && (
-                <span>📍 {profile.city}{profile.state ? `, ${profile.state}` : ''}</span>
+              {profile.phone && <span className="text-slate-600 font-medium">📞 {profile.phone}</span>}
+              {profile.city && profile.state && (
+                <span className="text-slate-500">📍 {profile.city}, {profile.state}</span>
               )}
-              {profile.phone && <span>📞 {profile.phone}</span>}
             </div>
           </div>
 
           {/* Quick Payment QR & Clean Dashboard Buttons */}
           <div className="shrink-0 flex flex-wrap items-center gap-2.5">
-            {onClearAllData && (
-              <button
-                type="button"
-                onClick={onClearAllData}
-                className="px-3.5 py-2.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 font-bold rounded-xl border border-rose-400/40 transition-all flex items-center gap-2 cursor-pointer backdrop-blur-md shadow-2xs text-xs"
-                title={isHindi ? 'सभी फर्जी डेटा और पुरानी तारीखें साफ करें' : 'Delete all false/mock data and clean dashboard'}
-              >
-                <Trash2 className="w-4 h-4 text-rose-400" />
-                <span>{isHindi ? 'डैशबोर्ड साफ करें' : 'Clean Dashboard'}</span>
-              </button>
-            )}
-
             <button
               type="button"
               onClick={onOpenQuickQR}
-              className="px-3.5 py-2.5 bg-white/10 hover:bg-white/20 text-white font-bold rounded-xl border border-white/20 transition-all flex items-center gap-2 cursor-pointer backdrop-blur-md shadow-2xs text-xs"
+              className="px-4 py-2.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold rounded-xl border border-amber-500/30 transition-all flex items-center gap-2 cursor-pointer shadow-2xs text-xs"
             >
-              <QrCode className="w-4 h-4 text-emerald-400" />
+              <QrCode className="w-4 h-4 text-slate-950" />
               <span>{isHindi ? 'पेमेंट QR कोड' : 'Payment QR'}</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* 2. THE 3 CORE PRIMARY ACTION CARDS (Clean & Prominent as explicitly requested) */}
+      {/* 2. THE 4 PRIMARY QUICK ACTION CARDS */}
       <div>
         <div className="flex items-center justify-between mb-3.5">
           <div>
@@ -244,19 +284,19 @@ export const HomePage: React.FC<HomePageProps> = ({
             </h2>
             <p className="text-xs text-slate-500">
               {isHindi
-                ? 'नया बिल बनाएं, ग्राहक जोड़ें या सामान/गाड़ी कैटलॉग में शामिल करें'
-                : '1-click billing, customer ledger registration, and stock catalog'}
+                ? 'नया बिल बनाएं, ग्राहक जोड़ें, सामान कैटलॉग और उधार वसूली खाता'
+                : '1-click billing, customer khata registration, stock catalog & payment recording'}
             </p>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Action 1: GENERATE BILL */}
-          <div className="group relative bg-white rounded-2xl p-6 border border-slate-200/90 shadow-2xs hover:shadow-xl hover:border-amber-400/80 transition-all duration-200 flex flex-col justify-between">
-            <div className="space-y-3.5">
+          <div className="group relative bg-white rounded-2xl p-5 border border-slate-200/90 shadow-2xs hover:shadow-xl hover:border-amber-400/80 transition-all duration-200 flex flex-col justify-between">
+            <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <div className="w-13 h-13 rounded-2xl bg-amber-400 text-slate-950 flex items-center justify-center shadow-md group-hover:scale-105 transition-transform">
-                  <FileText className="w-6.5 h-6.5" />
+                <div className="w-12 h-12 rounded-2xl bg-amber-400 text-slate-950 flex items-center justify-center shadow-md group-hover:scale-105 transition-transform">
+                  <FileText className="w-6 h-6" />
                 </div>
                 <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">
                   {isHindi ? 'त्वरित बिल' : 'Fast Billing'}
@@ -264,13 +304,13 @@ export const HomePage: React.FC<HomePageProps> = ({
               </div>
 
               <div>
-                <h3 className="text-lg font-black text-slate-900 group-hover:text-amber-600 transition-colors">
-                  {isHindi ? 'बिल बनाएं (Generate Bill)' : 'Generate Bill'}
+                <h3 className="text-base font-black text-slate-900 group-hover:text-amber-600 transition-colors">
+                  {isHindi ? 'बिल बनाएं' : 'Generate Bill'}
                 </h3>
                 <p className="text-xs text-slate-500 mt-1 leading-relaxed">
                   {isHindi
-                    ? 'टैक्स इनवॉइस, सेल बिल या वाहन डिलीवरी चालान तैयार करें (A4 प्रिंट व QR कोड सहित)'
-                    : 'Create GST Tax Invoice, Sale Bill or Vehicle Delivery Challan with live receipt preview & A4 printing.'}
+                    ? 'टैक्स इनवॉइस, सेल बिल या वाहन डिलीवरी चालान तैयार करें।'
+                    : 'Create GST Tax Invoice, Sale Bill or Vehicle Delivery Challan with A4 print.'}
                 </p>
               </div>
 
@@ -281,24 +321,24 @@ export const HomePage: React.FC<HomePageProps> = ({
               </div>
             </div>
 
-            <div className="pt-5 mt-4 border-t border-slate-100">
+            <div className="pt-4 mt-3 border-t border-slate-100">
               <button
                 type="button"
                 onClick={onGenerateBill}
-                className="w-full py-2.5 px-4 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black rounded-xl text-xs transition-all flex items-center justify-center gap-2 shadow-2xs group-hover:shadow-md cursor-pointer"
+                className="w-full py-2.5 px-3 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 shadow-2xs group-hover:shadow-md cursor-pointer"
               >
                 <span>{isHindi ? 'बिल बनाएं' : 'Generate Bill Now'}</span>
-                <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+                <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-1" />
               </button>
             </div>
           </div>
 
           {/* Action 2: ADD CUSTOMER */}
-          <div className="group relative bg-white rounded-2xl p-6 border border-slate-200/90 shadow-2xs hover:shadow-xl hover:border-emerald-500/80 transition-all duration-200 flex flex-col justify-between">
-            <div className="space-y-3.5">
+          <div className="group relative bg-white rounded-2xl p-5 border border-slate-200/90 shadow-2xs hover:shadow-xl hover:border-emerald-500/80 transition-all duration-200 flex flex-col justify-between">
+            <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <div className="w-13 h-13 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-md group-hover:scale-105 transition-transform">
-                  <UserPlus className="w-6.5 h-6.5" />
+                <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-md group-hover:scale-105 transition-transform">
+                  <UserPlus className="w-6 h-6" />
                 </div>
                 <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
                   {isHindi ? 'खाता लेजर' : 'Khata Linked'}
@@ -306,41 +346,41 @@ export const HomePage: React.FC<HomePageProps> = ({
               </div>
 
               <div>
-                <h3 className="text-lg font-black text-slate-900 group-hover:text-emerald-600 transition-colors">
-                  {isHindi ? 'ग्राहक जोड़ें (Add Customer)' : 'Add Customer'}
+                <h3 className="text-base font-black text-slate-900 group-hover:text-emerald-600 transition-colors">
+                  {isHindi ? 'ग्राहक जोड़ें' : 'Add Customer'}
                 </h3>
                 <p className="text-xs text-slate-500 mt-1 leading-relaxed">
                   {isHindi
-                    ? 'ग्राहक का नाम, फोन, आधार/पैन, जीएसटी और उधारी-जमा खाता बही में दर्ज करें'
-                    : 'Register party contact, Aadhaar/PAN identity, address, and outstanding credit account.'}
+                    ? 'ग्राहक का नाम, फोन, पता, जीएसटी और उधारी-जमा खाता दर्ज करें।'
+                    : 'Register party contact, Aadhaar/PAN, address, and outstanding balance.'}
                 </p>
               </div>
 
               <div className="pt-1 flex flex-wrap gap-1.5 text-[10px] font-semibold text-slate-600">
-                <span className="bg-slate-100 px-2 py-0.5 rounded">👥 Contact Book</span>
+                <span className="bg-slate-100 px-2 py-0.5 rounded">👥 Contacts</span>
                 <span className="bg-slate-100 px-2 py-0.5 rounded">📒 Khata Ledger</span>
                 <span className="bg-slate-100 px-2 py-0.5 rounded">💬 WhatsApp</span>
               </div>
             </div>
 
-            <div className="pt-5 mt-4 border-t border-slate-100">
+            <div className="pt-4 mt-3 border-t border-slate-100">
               <button
                 type="button"
                 onClick={onAddCustomer}
-                className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl text-xs transition-all flex items-center justify-center gap-2 shadow-2xs group-hover:shadow-md cursor-pointer"
+                className="w-full py-2.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 shadow-2xs group-hover:shadow-md cursor-pointer"
               >
                 <span>{isHindi ? 'नया ग्राहक जोड़ें' : 'Add New Customer'}</span>
-                <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+                <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-1" />
               </button>
             </div>
           </div>
 
           {/* Action 3: ADD PRODUCT */}
-          <div className="group relative bg-white rounded-2xl p-6 border border-slate-200/90 shadow-2xs hover:shadow-xl hover:border-sky-500/80 transition-all duration-200 flex flex-col justify-between">
-            <div className="space-y-3.5">
+          <div className="group relative bg-white rounded-2xl p-5 border border-slate-200/90 shadow-2xs hover:shadow-xl hover:border-sky-500/80 transition-all duration-200 flex flex-col justify-between">
+            <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <div className="w-13 h-13 rounded-2xl bg-sky-600 text-white flex items-center justify-center shadow-md group-hover:scale-105 transition-transform">
-                  <PackagePlus className="w-6.5 h-6.5" />
+                <div className="w-12 h-12 rounded-2xl bg-sky-600 text-white flex items-center justify-center shadow-md group-hover:scale-105 transition-transform">
+                  <PackagePlus className="w-6 h-6" />
                 </div>
                 <span className="text-[10px] font-bold uppercase tracking-wider text-sky-800 bg-sky-50 px-2.5 py-1 rounded-full border border-sky-200">
                   {isHindi ? 'स्टॉक कैटलॉग' : 'Stock & Catalog'}
@@ -348,13 +388,13 @@ export const HomePage: React.FC<HomePageProps> = ({
               </div>
 
               <div>
-                <h3 className="text-lg font-black text-slate-900 group-hover:text-sky-600 transition-colors">
-                  {isHindi ? 'सामान जोड़ें (Add Product)' : 'Add Product'}
+                <h3 className="text-base font-black text-slate-900 group-hover:text-sky-600 transition-colors">
+                  {isHindi ? 'सामान / गाड़ी जोड़ें' : 'Add Product / Vehicle'}
                 </h3>
                 <p className="text-xs text-slate-500 mt-1 leading-relaxed">
                   {isHindi
-                    ? 'गाड़ियों (2W/EV/4W), स्पेयर पार्ट्स या रिटेल सामान को HSN, रेट और जीएसटी के साथ जोड़ें'
-                    : 'Add vehicle models (2W / EV / 4W) or retail products with HSN codes, rates, and GST slabs.'}
+                    ? 'गाड़ियों (2W/EV/4W), स्पेयर पार्ट्स या रिटेल सामान को जोड़ें।'
+                    : 'Add vehicle models (2W/EV/4W) or retail products with HSN & GST.'}
                 </p>
               </div>
 
@@ -365,21 +405,63 @@ export const HomePage: React.FC<HomePageProps> = ({
               </div>
             </div>
 
-            <div className="pt-5 mt-4 border-t border-slate-100">
+            <div className="pt-4 mt-3 border-t border-slate-100">
               <button
                 type="button"
                 onClick={onAddProduct}
-                className="w-full py-2.5 px-4 bg-sky-600 hover:bg-sky-500 text-white font-black rounded-xl text-xs transition-all flex items-center justify-center gap-2 shadow-2xs group-hover:shadow-md cursor-pointer"
+                className="w-full py-2.5 px-3 bg-sky-600 hover:bg-sky-500 text-white font-black rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 shadow-2xs group-hover:shadow-md cursor-pointer"
               >
-                <span>{isHindi ? 'नया सामान / गाड़ी जोड़ें' : 'Add Product / Vehicle'}</span>
-                <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+                <span>{isHindi ? 'नया सामान जोड़ें' : 'Add Item / Vehicle'}</span>
+                <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-1" />
+              </button>
+            </div>
+          </div>
+
+          {/* Action 4: RECORD PAYMENT / KHATA */}
+          <div className="group relative bg-white rounded-2xl p-5 border border-slate-200/90 shadow-2xs hover:shadow-xl hover:border-indigo-500/80 transition-all duration-200 flex flex-col justify-between">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md group-hover:scale-105 transition-transform">
+                  <CreditCard className="w-6 h-6" />
+                </div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-800 bg-indigo-50 px-2.5 py-1 rounded-full border border-indigo-200">
+                  {isHindi ? 'उधार वसूली' : 'Khata Dues'}
+                </span>
+              </div>
+
+              <div>
+                <h3 className="text-base font-black text-slate-900 group-hover:text-indigo-600 transition-colors">
+                  {isHindi ? 'पेमेंट / खाता दर्ज करें' : 'Record Payment / Khata'}
+                </h3>
+                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                  {isHindi
+                    ? 'उधार वसूली, पार्टी लेजर अपडेट और तत्काल रसीद बनाएं।'
+                    : 'Collect customer dues, record settlements, and issue instant receipts.'}
+                </p>
+              </div>
+
+              <div className="pt-1 flex flex-wrap gap-1.5 text-[10px] font-semibold text-slate-600">
+                <span className="bg-slate-100 px-2 py-0.5 rounded">💰 Receipts</span>
+                <span className="bg-slate-100 px-2 py-0.5 rounded">📊 Khata Sync</span>
+                <span className="bg-slate-100 px-2 py-0.5 rounded">📱 Dynamic QR</span>
+              </div>
+            </div>
+
+            <div className="pt-4 mt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={onOpenKhata}
+                className="w-full py-2.5 px-3 bg-indigo-600 hover:bg-indigo-500 text-white font-black rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 shadow-2xs group-hover:shadow-md cursor-pointer"
+              >
+                <span>{isHindi ? 'खाता लेजर खोलें' : 'Open Khata Ledger'}</span>
+                <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-1" />
               </button>
             </div>
           </div>
         </div>
       </div>
 
-      {/* 3. Vypaar / Zoho Financial Pulse KPI Cards */}
+      {/* 3. Financial Pulse KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
         {/* Total Sales */}
         <div className="bg-white p-4.5 rounded-2xl border border-slate-200/90 shadow-2xs">
@@ -465,7 +547,7 @@ export const HomePage: React.FC<HomePageProps> = ({
         </div>
       </div>
 
-      {/* 4. Transactions Ledger (Zoho Books / Vyapar Sale Book Feed) */}
+      {/* 4. Transactions Ledger (Sale Book Feed) */}
       <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-5 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
@@ -632,7 +714,7 @@ export const HomePage: React.FC<HomePageProps> = ({
         )}
       </div>
 
-      {/* 5. Zoho / Vyapar Side-by-side Widgets (Parties Due & Low Stock) */}
+      {/* 5. Side-by-side Widgets (Parties Due & Low Stock) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* Widget 1: Parties to Collect From */}
         <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-5 space-y-3.5">

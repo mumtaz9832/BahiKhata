@@ -1,0 +1,110 @@
+{
+  "entities": {
+    "businessProfile": {
+      "title": "Business Profile",
+      "description": "Dealership and store details, tax GSTIN, bank accounts and contact info.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Business or dealership trading name" },
+        "tagline": { "type": "string", "description": "Tagline or sub-header" },
+        "address": { "type": "string", "description": "Registered address" },
+        "city": { "type": "string", "description": "City" },
+        "state": { "type": "string", "description": "State" },
+        "pincode": { "type": "string", "description": "Postal code" },
+        "phone": { "type": "string", "description": "Primary phone" },
+        "altPhone": { "type": "string", "description": "Alternate phone" },
+        "email": { "type": "string", "description": "Email address" },
+        "gstin": { "type": "string", "description": "GSTIN identification" },
+        "dealerCode": { "type": "string", "description": "Authorized dealer code" },
+        "upiId": { "type": "string", "description": "UPI VPA ID for dynamic payments" },
+        "bankName": { "type": "string", "description": "Bank name" },
+        "accountNumber": { "type": "string", "description": "Bank account number" },
+        "ifscCode": { "type": "string", "description": "Bank IFSC code" },
+        "accountHolder": { "type": "string", "description": "Bank account beneficiary name" },
+        "businessType": { "type": "string", "description": "Business Type: sales, service, or sales_and_service" },
+        "industryType": { "type": "string", "description": "Industry category" },
+        "gstRegistered": { "type": "boolean", "description": "Whether the business is GST registered" },
+        "gstLegalName": { "type": "string", "description": "GST legal business name" },
+        "gstState": { "type": "string", "description": "GST state name" },
+        "billingType": { "type": "string", "description": "Billing type: GST or Non-GST" },
+        "gstCalculationMode": { "type": "string", "description": "Inclusive or Exclusive" },
+        "defaultGstRate": { "type": "number", "description": "Default GST rate percentage" },
+        "registrationCompleted": { "type": "boolean", "description": "Whether business registration form was completed" },
+        "onboardingCompleted": { "type": "boolean", "description": "Whether onboarding has been completed" }
+      },
+      "required": ["name"]
+    },
+    "invoice": {
+      "title": "Saved Invoice",
+      "description": "Tax invoice or delivery challan document record.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique invoice ID" },
+        "invoiceNo": { "type": "string", "description": "Formatted invoice serial number" },
+        "invoiceDate": { "type": "string", "description": "Date of invoice issue" },
+        "deliveryDate": { "type": "string", "description": "Date of delivery" },
+        "deliveryTime": { "type": "string", "description": "Delivery time" },
+        "mode": { "type": "string", "description": "Dealership or retail mode", "enum": ["auto_dealer", "general_retail"] },
+        "status": { "type": "string", "description": "Payment settlement status", "enum": ["PAID", "PARTIAL", "UNPAID"] },
+        "createdAt": { "type": "string", "description": "ISO creation timestamp" },
+        "updatedAt": { "type": "string", "description": "ISO updated timestamp" }
+      },
+      "required": ["id", "invoiceNo", "invoiceDate", "mode", "status"]
+    },
+    "customer": {
+      "title": "Customer Record",
+      "description": "Customer party details and khata balance.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Customer record ID" },
+        "fullName": { "type": "string", "description": "Full name of customer/party" },
+        "phone": { "type": "string", "description": "Primary phone" },
+        "altPhone": { "type": "string", "description": "Alternate phone" },
+        "email": { "type": "string", "description": "Email address" },
+        "address": { "type": "string", "description": "Address" },
+        "city": { "type": "string", "description": "City" },
+        "state": { "type": "string", "description": "State" },
+        "pincode": { "type": "string", "description": "Postal pincode" },
+        "gstin": { "type": "string", "description": "Party GSTIN" },
+        "balanceDue": { "type": "number", "description": "Outstanding balance due" },
+        "createdAt": { "type": "string", "description": "ISO creation timestamp" }
+      },
+      "required": ["id", "fullName", "phone"]
+    },
+    "product": {
+      "title": "Product Record",
+      "description": "Stock inventory catalog item or vehicle model.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Product ID" },
+        "name": { "type": "string", "description": "Item or model name" },
+        "category": { "type": "string", "description": "Product category", "enum": ["two_wheeler", "four_wheeler", "electric_vehicle", "commercial", "spare_parts", "goods", "service"] },
+        "hsn": { "type": "string", "description": "HSN/SAC code" },
+        "rate": { "type": "number", "description": "Unit rate or ex-showroom price" },
+        "gstPercent": { "type": "number", "description": "GST percentage" },
+        "unit": { "type": "string", "description": "Unit measurement" },
+        "stockQty": { "type": "number", "description": "Current stock count" },
+        "createdAt": { "type": "string", "description": "ISO creation timestamp" }
+      },
+      "required": ["id", "name", "category", "hsn", "rate", "gstPercent", "unit"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/profile/business": {
+      "schema": "businessProfile",
+      "description": "User business profile information"
+    },
+    "/users/{userId}/invoices/{invoiceId}": {
+      "schema": "invoice",
+      "description": "User invoice and billing documents"
+    },
+    "/users/{userId}/customers/{customerId}": {
+      "schema": "customer",
+      "description": "User party and customer khata directory"
+    },
+    "/users/{userId}/products/{productId}": {
+      "schema": "product",
+      "description": "User inventory and vehicle stock catalog"
+    }
+  }
+}

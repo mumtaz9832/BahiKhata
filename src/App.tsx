@@ -40,6 +40,8 @@ import {
   saveProduct,
   deleteProduct,
   purgeAllFalseData,
+  syncProfileToFirestore,
+  loadProfileFromFirestore,
 } from './utils/storage';
 import { exportElementToPDF, triggerPrintDialog, generatePDFBlob } from './utils/pdfExport';
 import { initAuth, googleSignIn, logout, getAccessToken } from './utils/googleAuth';
@@ -61,6 +63,10 @@ import { HomePage } from './components/HomePage';
 import { AddCustomerModal } from './components/AddCustomerModal';
 import { AddProductModal } from './components/AddProductModal';
 import { VyaparSidebar } from './components/VyaparSidebar';
+import { AuthModal } from './components/AuthModal';
+import { SingleRegistrationModal, RegistrationData } from './components/SingleRegistrationModal';
+import { OnboardingModal } from './components/OnboardingModal';
+import { MobileBottomNav } from './components/MobileBottomNav';
 import { SalesView } from './components/SalesView';
 import { PartiesView } from './components/PartiesView';
 import { ItemsView } from './components/ItemsView';
@@ -82,6 +88,7 @@ import {
   ArrowLeft,
   UserPlus,
   PackagePlus,
+  Mail,
 } from 'lucide-react';
 
 
@@ -210,11 +217,26 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
+  const [registrationAuthMethod, setRegistrationAuthMethod] = useState<'google' | 'email_mobile'>('google');
+  const [temporaryAccountUser, setTemporaryAccountUser] = useState<{
+    uid?: string;
+    displayName?: string | null;
+    email?: string | null;
+    phoneNumber?: string | null;
+  } | null>(null);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(() => {
+    return localStorage.getItem('bahikhata_guest_mode') !== 'true';
+  });
+  const [isSingleRegistrationOpen, setIsSingleRegistrationOpen] = useState<boolean>(false);
+  const [isOnboardingOpen, setIsOnboardingOpen] = useState<boolean>(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
   const [isUploadingToDrive, setIsUploadingToDrive] = useState<boolean>(false);
   const [driveUploadSuccessLink, setDriveUploadSuccessLink] = useState<{ name: string; url: string } | null>(null);
 
   // UI state
   const [isPdfGenerating, setIsPdfGenerating] = useState<boolean>(false);
+  const [isEmailPreparing, setIsEmailPreparing] = useState<boolean>(false);
+  const [emailShareNotice, setEmailShareNotice] = useState<{ filename: string; hasWebShare: boolean } | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
 
   // Load initial data & Auth state & Hybrid Storage reconciliation
@@ -227,19 +249,45 @@ export default function App() {
 
     // Hydrate from IndexedDB in background to prevent browser storage wipes
     initializeHybridStorage().then(() => {
-      setProfile(getBusinessProfile());
+      const reconciledProfile = getBusinessProfile();
+      setProfile(reconciledProfile);
       setInvoices(getSavedInvoices());
       setSubscription(getSubscriptionState());
       setCustomers(getSavedCustomers());
       setProducts(getSavedProducts());
+
+      // If user is guest/local and registration has never been completed, prompt single registration
+      if (
+        localStorage.getItem('bahikhata_guest_mode') === 'true' &&
+        !reconciledProfile.registrationCompleted &&
+        reconciledProfile.name === 'BahiKhata Business' &&
+        !reconciledProfile.phone
+      ) {
+        setRegistrationAuthMethod('email_mobile');
+        setIsSingleRegistrationOpen(true);
+      }
     });
 
     // Initialize Google auth listener
     const unsubscribe = initAuth(
-      (authUser, token) => {
+      async (authUser, token) => {
         setUser(authUser);
         setAccessToken(token);
         setIsAuthLoading(false);
+        if (authUser) {
+          setIsAuthModalOpen(false);
+          // Check if remote profile exists in Firestore
+          const remoteProfile = await loadProfileFromFirestore(authUser.uid);
+          const activeProf = remoteProfile || getBusinessProfile();
+          setProfile(activeProf);
+
+          // If Google authentication is valid but business registration is incomplete,
+          // launch the Single Registration Form with pre-filled name and email
+          if (!activeProf.registrationCompleted) {
+            setRegistrationAuthMethod('google');
+            setIsSingleRegistrationOpen(true);
+          }
+        }
       },
       () => {
         setUser(null);
@@ -315,12 +363,86 @@ export default function App() {
       if (res) {
         setUser(res.user);
         setAccessToken(res.accessToken);
+        localStorage.removeItem('bahikhata_guest_mode');
+        setIsAuthModalOpen(false);
+
+        // Fetch remote or local profile
+        const remoteProfile = await loadProfileFromFirestore(res.user.uid);
+        const currProfile = remoteProfile || getBusinessProfile();
+        setProfile(currProfile);
+
+        // Google authentication alone is not considered completed registration
+        // Open single business registration form if registrationCompleted is false
+        if (!currProfile.registrationCompleted) {
+          setRegistrationAuthMethod('google');
+          setIsSingleRegistrationOpen(true);
+        }
       }
     } catch (err) {
       console.error('Sign-in failed:', err);
+      throw err;
     } finally {
       setIsAuthLoading(false);
     }
+  };
+
+  const handleEmailMobileRegister = (accData: { fullName: string; email: string; phone: string }) => {
+    setTemporaryAccountUser({
+      displayName: accData.fullName,
+      email: accData.email,
+      phoneNumber: accData.phone,
+    });
+    setRegistrationAuthMethod('email_mobile');
+    setIsAuthModalOpen(false);
+    setIsSingleRegistrationOpen(true);
+  };
+
+  // Complete Single Business Registration
+  const handleCompleteSingleRegistration = async (data: RegistrationData) => {
+    const effectiveUserId = user?.uid || data.userId || `bahi_${Date.now()}`;
+    const nowIso = new Date().toISOString();
+
+    const updatedProf: BusinessProfile = {
+      ...profile,
+      userId: effectiveUserId,
+      fullName: data.fullName,
+      name: data.businessName,
+      businessName: data.businessName,
+      mobileNumber: data.mobileNumber,
+      phone: data.mobileNumber,
+      email: data.email,
+      businessAddress: data.businessAddress,
+      address: data.businessAddress,
+      gstNumber: data.gstNumber || undefined,
+      gstin: data.gstNumber || undefined,
+      gstRegistered: Boolean(data.gstNumber),
+      mobileVerified: true,
+      emailVerified: true,
+      registrationCompleted: true,
+      onboardingCompleted: true,
+      createdAt: profile.createdAt || nowIso,
+      updatedAt: nowIso,
+    };
+
+    setProfile(updatedProf);
+    saveBusinessProfile(updatedProf);
+    localStorage.removeItem('bahikhata_guest_mode');
+    localStorage.setItem('bahikhata_onboarded', 'true');
+
+    if (effectiveUserId) {
+      try {
+        await syncProfileToFirestore(updatedProf, effectiveUserId);
+      } catch (err) {
+        console.warn('Firestore profile sync error:', err);
+      }
+    }
+
+    setIsSingleRegistrationOpen(false);
+    setIsAuthModalOpen(false);
+    setIsOnboardingOpen(false);
+    setCurrentView('home');
+    setSaveSuccess(true);
+    setTimeout(() => setSaveSuccess(false), 2500);
   };
 
   const handleGoogleSignOut = async () => {
@@ -649,9 +771,136 @@ export default function App() {
     await exportElementToPDF(elementId, filename, setIsPdfGenerating);
   };
 
+  // Share via Email handler: triggers email draft with generated PDF invoice attached in default mail client
+  const handleShareViaEmail = async () => {
+    setIsEmailPreparing(true);
+    setEmailShareNotice(null);
+
+    const elementId =
+      previewTab === 'invoice'
+        ? 'printable-invoice-document'
+        : 'printable-challan-document';
+
+    const docTitle = previewTab === 'invoice' ? 'Tax Invoice' : 'Delivery Challan';
+    const filename = `${invoiceNo}_${
+      previewTab === 'invoice' ? 'Tax-Invoice' : 'Delivery-Challan'
+    }.pdf`;
+
+    const isAuto = mode === 'auto_dealer';
+    const customerName = isAuto
+      ? autoData.buyer.fullName || 'Valued Customer'
+      : retailData.customer.fullName || 'Valued Customer';
+
+    const customerPhone = isAuto ? autoData.buyer.phone : retailData.customer.phone;
+
+    // Look for customer email in matched records or active fields
+    const matchedCustomer = customers.find(
+      (c) =>
+        (c.phone && customerPhone && c.phone.trim() === customerPhone.trim()) ||
+        (c.fullName && customerName && c.fullName.trim().toLowerCase() === customerName.trim().toLowerCase())
+    );
+    const recipientEmail = matchedCustomer?.email || '';
+
+    const businessName = profile.businessName || profile.name || 'BahiKhata Business';
+    const grandTotal = isAuto
+      ? autoData.pricing.totalSaleValue || 0
+      : retailData.grandTotal || 0;
+    const balanceAmount = isAuto
+      ? autoData.pricing.balanceAmount || 0
+      : retailData.balanceAmount || 0;
+
+    const subject = `${docTitle} #${invoiceNo} from ${businessName}`;
+    const emailBody = [
+      `Dear ${customerName},`,
+      ``,
+      `Please find attached your ${docTitle} #${invoiceNo} issued on ${invoiceDate}.`,
+      ``,
+      `=============================`,
+      `INVOICE SUMMARY:`,
+      `• Invoice No: ${invoiceNo}`,
+      `• Date: ${invoiceDate}`,
+      `• Total Amount: ₹${grandTotal.toLocaleString('en-IN')}`,
+      `• Advance Received: ₹${(isAuto ? autoData.pricing.advanceReceived || 0 : retailData.advanceReceived || 0).toLocaleString('en-IN')}`,
+      `• Balance Due: ₹${balanceAmount.toLocaleString('en-IN')}`,
+      `=============================`,
+      ``,
+      balanceAmount > 0 && profile.upiId
+        ? `You can make an instant online payment via UPI: ${profile.upiId}\n`
+        : ``,
+      `Thank you for choosing ${businessName}!`,
+      ``,
+      `Best regards,`,
+      `${businessName}`,
+      profile.phone ? `Phone: ${profile.phone}` : ``,
+      profile.email ? `Email: ${profile.email}` : ``,
+      profile.address ? `Address: ${profile.address}` : ``,
+    ]
+      .filter((line) => line !== undefined)
+      .join('\n');
+
+    try {
+      const blob = await generatePDFBlob(elementId);
+      if (!blob) {
+        throw new Error('Failed to generate PDF invoice blob');
+      }
+
+      const file = new File([blob], filename, { type: 'application/pdf' });
+
+      // 1. Try Web Share API Level 2 (attaches the PDF file directly to default mail client like Gmail / Mail / Outlook)
+      if (
+        typeof navigator !== 'undefined' &&
+        navigator.canShare &&
+        navigator.canShare({ files: [file] })
+      ) {
+        try {
+          await navigator.share({
+            title: subject,
+            text: emailBody,
+            files: [file],
+          });
+          setEmailShareNotice({ filename, hasWebShare: true });
+          setTimeout(() => setEmailShareNotice(null), 7000);
+          return;
+        } catch (shareErr: any) {
+          if (shareErr?.name === 'AbortError') {
+            return; // User cancelled the share dialog
+          }
+          console.warn('Web Share API error, falling back to mailto & download:', shareErr);
+        }
+      }
+
+      // 2. Fallback for desktop & standard mail clients:
+      // Download the generated PDF invoice file so user has the attachment ready
+      const downloadUrl = URL.createObjectURL(blob);
+      const tempLink = document.createElement('a');
+      tempLink.href = downloadUrl;
+      tempLink.download = filename;
+      document.body.appendChild(tempLink);
+      tempLink.click();
+      document.body.removeChild(tempLink);
+      setTimeout(() => URL.revokeObjectURL(downloadUrl), 2000);
+
+      // Trigger user's default mail client draft with pre-filled recipient, subject, and body
+      const mailtoUrl = `mailto:${encodeURIComponent(recipientEmail)}?subject=${encodeURIComponent(
+        subject
+      )}&body=${encodeURIComponent(emailBody)}`;
+      window.location.href = mailtoUrl;
+
+      setEmailShareNotice({ filename, hasWebShare: false });
+      setTimeout(() => setEmailShareNotice(null), 8000);
+    } catch (err) {
+      console.error('Error sharing invoice via email:', err);
+    } finally {
+      setIsEmailPreparing(false);
+    }
+  };
+
   const handleSaveProfile = (newProfile: BusinessProfile) => {
     setProfile(newProfile);
     saveBusinessProfile(newProfile);
+    if (user?.uid) {
+      syncProfileToFirestore(newProfile, user.uid);
+    }
   };
 
   const openWhatsAppWithCurrent = () => {
@@ -680,7 +929,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-100/70 text-slate-900 flex antialiased">
-      {/* 1. Zoho / Vyapar Left Navigation Sidebar */}
+      {/* 1. Left Navigation Sidebar */}
       <VyaparSidebar
         currentView={currentView}
         onNavigate={(view) => setCurrentView(view)}
@@ -700,6 +949,7 @@ export default function App() {
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenDriveModal={() => setIsDriveModalOpen(true)}
         onOpenSubscription={() => setIsSubscriptionOpen(true)}
+        onOpenKhata={() => setIsKhataOpen(true)}
         onNewInvoice={() => {
           handleNewInvoice();
           setCurrentView('generate_bill');
@@ -707,6 +957,12 @@ export default function App() {
         onClearAllData={handleClearAllData}
         lang={lang}
         onToggleLang={handleToggleLang}
+        user={user}
+        onOpenAuthModal={() => setIsAuthModalOpen(true)}
+        onSignOut={handleGoogleSignOut}
+        syncStatus={user ? 'synced' : 'offline'}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={() => setIsSidebarCollapsed((prev) => !prev)}
       />
 
       {/* 2. Main App Content Viewport */}
@@ -736,9 +992,13 @@ export default function App() {
           onToggleLang={handleToggleLang}
           searchQuery={searchQuery}
           onSearchChange={(q) => setSearchQuery(q)}
+          user={user}
+          onOpenAuthModal={() => setIsAuthModalOpen(true)}
+          onSignOut={handleGoogleSignOut}
+          syncStatus={user ? 'synced' : 'offline'}
         />
 
-        <div className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 print:p-0 print:m-0 print:max-w-none print:w-full">
+        <div className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 md:pb-12 print:p-0 print:m-0 print:max-w-none print:w-full">
           {currentView === 'home' && (
             <HomePage
               profile={profile}
@@ -748,6 +1008,9 @@ export default function App() {
               lang={lang}
               customers={customers}
               products={products}
+              user={user}
+              onOpenAuthModal={() => setIsAuthModalOpen(true)}
+              syncStatus={user ? 'synced' : 'offline'}
               onGenerateBill={() => {
                 handleNewInvoice();
                 setCurrentView('generate_bill');
@@ -1018,8 +1281,8 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Instant Output Actions: 5 items grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1 border-t border-slate-100 text-xs">
+              {/* Instant Output Actions: 6 items grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 pt-1 border-t border-slate-100 text-xs">
                 {/* 1. Print / Save PDF via Browser */}
                 <button
                   type="button"
@@ -1052,7 +1315,28 @@ export default function App() {
                   )}
                 </button>
 
-                {/* 3. WhatsApp Reminder */}
+                {/* 3. Share via Email */}
+                <button
+                  type="button"
+                  disabled={isEmailPreparing}
+                  onClick={handleShareViaEmail}
+                  className="flex items-center justify-center gap-1.5 py-2 px-2.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold rounded-lg shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                  title="Trigger email draft with generated PDF invoice attached in default mail client"
+                >
+                  {isEmailPreparing ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Email...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Mail className="w-3.5 h-3.5 text-indigo-200" />
+                      <span>Share via Email</span>
+                    </>
+                  )}
+                </button>
+
+                {/* 4. WhatsApp Reminder */}
                 <button
                   type="button"
                   onClick={openWhatsAppWithCurrent}
@@ -1063,7 +1347,7 @@ export default function App() {
                   <span>WhatsApp</span>
                 </button>
 
-                {/* 4. Dynamic UPI QR */}
+                {/* 5. Dynamic UPI QR */}
                 <button
                   type="button"
                   onClick={() => setIsQuickQROpen(true)}
@@ -1074,12 +1358,12 @@ export default function App() {
                   <span>UPI QR</span>
                 </button>
 
-                {/* 5. Save to Google Drive */}
+                {/* 6. Save to Google Drive */}
                 <button
                   type="button"
                   disabled={isUploadingToDrive}
                   onClick={handleSaveToDrive}
-                  className="col-span-2 sm:col-span-1 flex items-center justify-center gap-1.5 py-2 px-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                  className="flex items-center justify-center gap-1.5 py-2 px-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg shadow-xs transition-colors cursor-pointer disabled:opacity-50"
                   title="Upload PDF copy to Google Drive"
                 >
                   {isUploadingToDrive ? (
@@ -1095,6 +1379,29 @@ export default function App() {
                   )}
                 </button>
               </div>
+
+              {/* Email Share Notice Banner */}
+              {emailShareNotice && (
+                <div className="p-2.5 bg-indigo-50 border border-indigo-200 rounded-lg flex items-center justify-between text-xs text-indigo-950 animate-in fade-in">
+                  <div className="flex items-center gap-2 truncate">
+                    <Mail className="w-4 h-4 text-indigo-600 shrink-0" />
+                    <span className="truncate">
+                      {emailShareNotice.hasWebShare ? (
+                        <>Email client opened with <strong>{emailShareNotice.filename}</strong> attached!</>
+                      ) : (
+                        <>Email draft opened in default mail app! PDF invoice (<strong>{emailShareNotice.filename}</strong>) downloaded for attachment.</>
+                      )}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setEmailShareNotice(null)}
+                    className="text-indigo-600 hover:text-indigo-900 font-bold ml-2 text-xs cursor-pointer shrink-0"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
 
               {/* Drive Upload Success Banner */}
               {driveUploadSuccessLink && (
@@ -1127,9 +1434,11 @@ export default function App() {
                   hasWatermark={subscription.hasWatermark}
                   onPrint={triggerPrintDialog}
                   onDownloadPDF={handleDownloadPDF}
+                  onShareViaEmail={handleShareViaEmail}
                   onOpenWhatsApp={openWhatsAppWithCurrent}
                   onOpenQR={() => setIsQuickQROpen(true)}
                   isPdfGenerating={isPdfGenerating}
+                  isEmailPreparing={isEmailPreparing}
                 />
               ) : (
                 <DeliveryChallanDocument
@@ -1138,9 +1447,11 @@ export default function App() {
                   hasWatermark={subscription.hasWatermark}
                   onPrint={triggerPrintDialog}
                   onDownloadPDF={handleDownloadPDF}
+                  onShareViaEmail={handleShareViaEmail}
                   onOpenWhatsApp={openWhatsAppWithCurrent}
                   onOpenQR={() => setIsQuickQROpen(true)}
                   isPdfGenerating={isPdfGenerating}
+                  isEmailPreparing={isEmailPreparing}
                 />
               )}
             </div>
@@ -1298,6 +1609,10 @@ export default function App() {
         onClose={() => setIsSettingsOpen(false)}
         profile={profile}
         onSave={handleSaveProfile}
+        onClearAllData={handleClearAllData}
+        onOpenRegistrationWizard={() => {
+          setIsSingleRegistrationOpen(true);
+        }}
       />
 
       <GoogleDriveModal
@@ -1312,6 +1627,93 @@ export default function App() {
         }}
         onUploadCurrentInvoice={handleSaveToDrive}
         isUploadingCurrent={isUploadingToDrive}
+      />
+
+      {/* Primary Authentication Modal (Login & Access) */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        user={user}
+        isLoading={isAuthLoading}
+        onGoogleSignIn={handleGoogleSignIn}
+        onOpenRegister={() => {
+          setIsAuthModalOpen(false);
+          setIsSingleRegistrationOpen(true);
+        }}
+        onContinueAsGuest={() => {
+          localStorage.setItem('bahikhata_guest_mode', 'true');
+          setIsAuthModalOpen(false);
+        }}
+        lang={lang}
+      />
+
+      {/* Single Business Registration & Onboarding Modal */}
+      <SingleRegistrationModal
+        isOpen={isSingleRegistrationOpen}
+        onClose={() => setIsSingleRegistrationOpen(false)}
+        initialUser={
+          user
+            ? {
+                uid: user.uid,
+                displayName: user.displayName,
+                email: user.email,
+                phoneNumber: user.phoneNumber,
+              }
+            : temporaryAccountUser
+        }
+        initialProfile={profile}
+        isGoogleAuthenticated={Boolean(user && user.email)}
+        canCancel={profile.registrationCompleted === true}
+        onRegister={handleCompleteSingleRegistration}
+        onSwitchToLogin={() => {
+          setIsSingleRegistrationOpen(false);
+          setIsAuthModalOpen(true);
+        }}
+      />
+
+      {/* Multi-Step Business Registration & Onboarding System */}
+      <OnboardingModal
+        isOpen={isOnboardingOpen}
+        onClose={() => {
+          localStorage.setItem('bahikhata_onboarded', 'true');
+          setIsOnboardingOpen(false);
+        }}
+        profile={profile}
+        mode={mode}
+        initialUser={
+          user
+            ? {
+                uid: user.uid,
+                displayName: user.displayName,
+                email: user.email,
+                phoneNumber: user.phoneNumber,
+              }
+            : temporaryAccountUser
+        }
+        authMethod={registrationAuthMethod}
+        canCancel={profile.registrationCompleted === true}
+        onSaveProfile={(updatedProf, newMode) => {
+          handleSaveProfile(updatedProf);
+          setMode(newMode);
+          localStorage.setItem('bahikhata_onboarded', 'true');
+        }}
+        lang={lang}
+      />
+
+      {/* Fixed Mobile Bottom Navigation Bar with Floating "+" Action Button */}
+      <MobileBottomNav
+        currentView={currentView}
+        onNavigate={(view) => setCurrentView(view)}
+        onNewBill={() => {
+          handleNewInvoice();
+          setCurrentView('generate_bill');
+        }}
+        onAddCustomer={() => setIsCustomerModalOpen(true)}
+        onAddProduct={() => setIsProductModalOpen(true)}
+        onRecordPayment={() => setIsKhataOpen(true)}
+        onOpenMore={() => setIsDrawerOpen(true)}
+        pendingKhataCount={pendingCount}
+        lang={lang}
       />
     </div>
   );

@@ -24,9 +24,14 @@ import {
   Globe,
   ChevronRight,
   X,
-  Plus,
   Trash2,
+  LogOut,
+  CreditCard,
+  FileText,
+  PanelLeftClose,
+  PanelLeft,
 } from 'lucide-react';
+import { BahiKhataLogo } from './BahiKhataLogo';
 
 interface VyaparSidebarProps {
   currentView: AppView;
@@ -42,10 +47,17 @@ interface VyaparSidebarProps {
   onOpenSettings: () => void;
   onOpenDriveModal: () => void;
   onOpenSubscription: () => void;
+  onOpenKhata: () => void;
   onNewInvoice: () => void;
   onClearAllData?: () => void;
   lang: AppLanguage;
   onToggleLang: () => void;
+  user?: User | null;
+  onOpenAuthModal?: () => void;
+  onSignOut?: () => void;
+  syncStatus?: 'synced' | 'offline';
+  isCollapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
 export const VyaparSidebar: React.FC<VyaparSidebarProps> = ({
@@ -62,10 +74,17 @@ export const VyaparSidebar: React.FC<VyaparSidebarProps> = ({
   onOpenSettings,
   onOpenDriveModal,
   onOpenSubscription,
+  onOpenKhata,
   onNewInvoice,
   onClearAllData,
   lang,
   onToggleLang,
+  user,
+  onOpenAuthModal,
+  onSignOut,
+  syncStatus = 'offline',
+  isCollapsed = false,
+  onToggleCollapse,
 }) => {
   const isPro = subscription && subscription.tier !== 'free';
   const isHindi = lang === 'hi';
@@ -74,62 +93,114 @@ export const VyaparSidebar: React.FC<VyaparSidebarProps> = ({
     {
       id: 'home' as AppView,
       label: isHindi ? 'डैशबोर्ड' : 'Dashboard',
-      sub: isHindi ? 'व्यापार सार' : 'Business Pulse',
       icon: LayoutDashboard,
     },
     {
       id: 'sales' as AppView,
-      label: isHindi ? 'बिक्री / इनवॉइस' : 'Sale Invoices',
-      sub: isHindi ? 'टैक्स बिल व चालान' : 'Tax Bills & Challans',
+      label: isHindi ? 'बिलिंग व इनवॉइस' : 'Billing',
       icon: Receipt,
     },
     {
       id: 'parties' as AppView,
-      label: isHindi ? 'पार्टी / ग्राहक' : 'Parties & Khata',
-      sub: isHindi ? 'उधार-जमा ग्राहक' : 'Customer Ledger',
+      label: isHindi ? 'ग्राहक संपर्क' : 'Customers',
       icon: Users,
+    },
+    {
+      id: 'khata' as const,
+      label: isHindi ? 'डिजिटल खाता' : 'Digital Khata',
+      icon: BookOpen,
       badge: pendingBalanceCount > 0 ? pendingBalanceCount : undefined,
+      action: onOpenKhata,
     },
     {
       id: 'items' as AppView,
-      label: isHindi ? 'सामान व स्टॉक' : 'Items & Stock',
-      sub: isHindi ? 'इन्वेंट्री कैटलॉग' : 'Inventory Catalog',
+      label: isHindi ? 'सामान व उत्पाद' : 'Products',
       icon: Package,
     },
     {
+      id: 'inventory' as const,
+      label: isHindi ? 'स्टॉक इन्वेंट्री' : 'Inventory',
+      icon: Store,
+      action: () => onNavigate('items'),
+    },
+    {
+      id: 'payments' as const,
+      label: isHindi ? 'पेमेंट वसूली' : 'Payments',
+      icon: CreditCard,
+      action: onOpenKhata,
+    },
+    {
       id: 'reports' as AppView,
-      label: isHindi ? 'रिपोर्ट्स व जीएसटी' : 'Reports & GST',
-      sub: isHindi ? 'GSTR-1 व डे बुक' : 'GSTR-1 & Day Book',
+      label: isHindi ? 'रिपोर्ट्स व जीएसटी' : 'Reports',
       icon: BarChart3,
+    },
+    {
+      id: 'documents' as const,
+      label: isHindi ? 'दस्तावेज व चालान' : 'Documents',
+      icon: FileText,
+      action: () => onNavigate('sales'),
+    },
+    {
+      id: 'drive' as const,
+      label: isHindi ? 'गूगल ड्राइव' : 'Google Drive',
+      icon: Cloud,
+      action: onOpenDriveModal,
+    },
+    {
+      id: 'settings' as const,
+      label: isHindi ? 'सेटिंग्स व प्रोफाइल' : 'Settings',
+      icon: Settings,
+      action: onOpenSettings,
     },
   ];
 
   const sidebarContent = (
     <div className="flex flex-col h-full bg-slate-900 text-slate-200 select-none">
-      {/* 1. App Brand & Business Identity Header */}
-      <div className="p-4 border-b border-slate-800 flex items-center justify-between">
-        <button
-          type="button"
-          onClick={() => {
-            onNavigate('home');
-            onCloseMobile();
-          }}
-          className="flex items-center gap-3 text-left group cursor-pointer"
-        >
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-amber-500 text-slate-950 font-black flex items-center justify-center text-base shadow-md group-hover:scale-105 transition-transform">
-            <span>VP</span>
-          </div>
-          <div className="overflow-hidden">
-            <div className="flex items-center gap-1.5">
-              <span className="font-black text-white text-base tracking-tight truncate max-w-[140px]">
-                {profile.name || 'BahiKhata'}
-              </span>
+      {/* 1. App Brand & Logo Header */}
+      <div className={`border-b border-slate-800 flex items-center justify-between transition-all ${isCollapsed ? 'p-3' : 'p-4'}`}>
+        {!isCollapsed ? (
+          <button
+            type="button"
+            onClick={() => {
+              onNavigate('home');
+              onCloseMobile();
+            }}
+            className="flex items-center gap-2.5 text-left group cursor-pointer overflow-hidden"
+          >
+            <BahiKhataLogo variant="icon" size="sm" />
+            <div className="overflow-hidden">
+              <div className="flex items-center gap-1">
+                <span className="font-black text-white text-base tracking-tight truncate max-w-[130px]">
+                  BahiKhata
+                </span>
+              </div>
+              <p className="text-[10px] text-amber-400 font-semibold tracking-wide uppercase truncate">
+                {isHindi ? 'स्मार्ट बिलिंग एवं खाता' : 'Smart Billing & Khata'}
+              </p>
             </div>
-            <p className="text-[10px] text-amber-400 font-semibold tracking-wider uppercase">
-              {isHindi ? 'व्यापार व जोहो बुक्स एडिशन' : 'Vyapar & Zoho Edition'}
-            </p>
-          </div>
-        </button>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => onNavigate('home')}
+            className="mx-auto cursor-pointer"
+            title="BahiKhata"
+          >
+            <BahiKhataLogo variant="icon" size="sm" />
+          </button>
+        )}
+
+        {/* Desktop Collapse Toggle Button */}
+        {onToggleCollapse && (
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            className="hidden md:flex p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+            title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {isCollapsed ? <PanelLeft className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+          </button>
+        )}
 
         {/* Mobile close button */}
         <button
@@ -142,43 +213,56 @@ export const VyaparSidebar: React.FC<VyaparSidebarProps> = ({
       </div>
 
       {/* 2. Business Mode Selector Switcher */}
-      <div className="p-3 border-b border-slate-800/80 bg-slate-950/40">
-        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1 mb-1.5 flex items-center justify-between">
-          <span>{isHindi ? 'बिजनेस मोड' : 'Business Mode'}</span>
-          <span className="text-[9px] font-mono text-slate-500">
-            {mode === 'auto_dealer' ? '2W/4W/EV' : 'Retail'}
-          </span>
+      {!isCollapsed ? (
+        <div className="p-3 border-b border-slate-800/80 bg-slate-950/40">
+          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1 mb-1.5 flex items-center justify-between">
+            <span>{isHindi ? 'बिजनेस मोड' : 'Business Mode'}</span>
+            <span className="text-[9px] font-mono text-slate-500">
+              {mode === 'auto_dealer' ? '2W/4W/EV' : 'Retail'}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-1 p-1 bg-slate-800/90 rounded-xl border border-slate-700/60">
+            <button
+              type="button"
+              onClick={() => onModeChange('auto_dealer')}
+              className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                mode === 'auto_dealer'
+                  ? 'bg-amber-400 text-slate-950 shadow-sm'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+              }`}
+            >
+              <Car className="w-3.5 h-3.5" />
+              <span>{isHindi ? 'डीलरशिप' : 'Auto 2W'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onModeChange('general_retail')}
+              className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                mode === 'general_retail'
+                  ? 'bg-amber-400 text-slate-950 shadow-sm'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+              }`}
+            >
+              <Store className="w-3.5 h-3.5" />
+              <span>{isHindi ? 'जनरल' : 'Retail'}</span>
+            </button>
+          </div>
         </div>
-        <div className="grid grid-cols-2 gap-1 p-1 bg-slate-800/90 rounded-xl border border-slate-700/60">
+      ) : (
+        <div className="p-2 border-b border-slate-800 flex justify-center">
           <button
             type="button"
-            onClick={() => onModeChange('auto_dealer')}
-            className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              mode === 'auto_dealer'
-                ? 'bg-amber-400 text-slate-950 shadow-sm'
-                : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
-            }`}
+            onClick={() => onModeChange(mode === 'auto_dealer' ? 'general_retail' : 'auto_dealer')}
+            className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 cursor-pointer"
+            title={`Switch to ${mode === 'auto_dealer' ? 'Retail' : 'Auto Showroom'}`}
           >
-            <Car className="w-3.5 h-3.5" />
-            <span className="truncate">Auto / EV</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => onModeChange('general_retail')}
-            className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              mode === 'general_retail'
-                ? 'bg-amber-400 text-slate-950 shadow-sm'
-                : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
-            }`}
-          >
-            <Store className="w-3.5 h-3.5" />
-            <span className="truncate">Retail</span>
+            {mode === 'auto_dealer' ? <Car className="w-4 h-4" /> : <Store className="w-4 h-4" />}
           </button>
         </div>
-      </div>
+      )}
 
-      {/* 3. Hero Quick Action: + New Bill / Fast Billing */}
-      <div className="p-3">
+      {/* 3. Primary "+ New Bill" Action Button */}
+      <div className={isCollapsed ? 'p-2' : 'p-3'}>
         <button
           type="button"
           onClick={() => {
@@ -186,195 +270,196 @@ export const VyaparSidebar: React.FC<VyaparSidebarProps> = ({
             onNavigate('generate_bill');
             onCloseMobile();
           }}
-          className="w-full flex items-center justify-center gap-2 py-2.5 px-3 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-black rounded-xl text-xs shadow-md shadow-amber-500/10 cursor-pointer transition-all active:scale-[0.98]"
+          className={`w-full py-2.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black rounded-xl text-xs transition-all flex items-center justify-center gap-2 shadow-md cursor-pointer ${
+            isCollapsed ? 'px-0' : 'px-3'
+          }`}
+          title={isHindi ? 'नया बिल बनाएं' : 'Create New Bill'}
         >
-          <FilePlus className="w-4 h-4" />
-          <span>{isHindi ? '+ नया बिल बनाएं' : '+ Create New Bill'}</span>
+          <FilePlus className="w-4 h-4 shrink-0" />
+          {!isCollapsed && <span>{isHindi ? '+ नया बिल बनाएं' : '+ Create New Bill'}</span>}
         </button>
       </div>
 
-      {/* 4. Primary Zoho / Vyapar Navigation Menu */}
-      <div className="flex-1 overflow-y-auto px-3 py-1 space-y-1">
-        <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 px-3 py-1.5">
-          {isHindi ? 'मुख्य मेनू' : 'Main Menu'}
-        </div>
+      {/* 4. Navigation Menu */}
+      <div className="flex-1 overflow-y-auto px-2 py-1 space-y-1">
+        {!isCollapsed && (
+          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 px-3 py-1">
+            {isHindi ? 'मुख्य मेनू' : 'Main Menu'}
+          </div>
+        )}
 
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = currentView === item.id;
+          const handleClick = () => {
+            if (item.action) {
+              item.action();
+            } else if (item.id === 'home' || item.id === 'sales' || item.id === 'parties' || item.id === 'items' || item.id === 'reports') {
+              onNavigate(item.id as AppView);
+            }
+            onCloseMobile();
+          };
+
           return (
             <button
               key={item.id}
               type="button"
-              onClick={() => {
-                onNavigate(item.id);
-                onCloseMobile();
-              }}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer group text-left ${
+              onClick={handleClick}
+              className={`w-full flex items-center rounded-xl text-xs font-semibold transition-all cursor-pointer group text-left ${
+                isCollapsed
+                  ? 'justify-center p-2.5'
+                  : 'justify-between px-3 py-2.5'
+              } ${
                 isActive
                   ? 'bg-slate-800 text-amber-400 shadow-sm border border-slate-700'
                   : 'text-slate-300 hover:bg-slate-800/60 hover:text-white'
               }`}
+              title={item.label}
             >
-              <div className="flex items-center gap-3">
+              <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-3'}`}>
                 <Icon
-                  className={`w-4 h-4 transition-colors ${
+                  className={`w-4 h-4 shrink-0 transition-colors ${
                     isActive ? 'text-amber-400' : 'text-slate-400 group-hover:text-amber-300'
                   }`}
                 />
-                <div>
-                  <div className="font-bold leading-tight">{item.label}</div>
-                  <div className="text-[10px] text-slate-500 font-normal">{item.sub}</div>
-                </div>
+                {!isCollapsed && <span className="font-bold leading-tight truncate">{item.label}</span>}
               </div>
 
-              {item.badge ? (
-                <span className="px-1.5 py-0.5 text-[10px] font-black rounded-full bg-amber-500 text-slate-950">
-                  {item.badge}
-                </span>
-              ) : (
-                <ChevronRight
-                  className={`w-3.5 h-3.5 transition-transform ${
-                    isActive ? 'text-amber-400 translate-x-0.5' : 'text-slate-600 group-hover:text-slate-400'
-                  }`}
-                />
+              {!isCollapsed && (
+                item.badge ? (
+                  <span className="px-1.5 py-0.2 text-[10px] font-black rounded-full bg-amber-500 text-slate-950">
+                    {item.badge}
+                  </span>
+                ) : (
+                  <ChevronRight
+                    className={`w-3.5 h-3.5 transition-transform ${
+                      isActive ? 'text-amber-400 translate-x-0.5' : 'text-slate-600 group-hover:text-slate-400'
+                    }`}
+                  />
+                )
               )}
             </button>
           );
         })}
 
-        {/* Quick Tools Divider */}
-        <div className="pt-3 pb-1">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 px-3 py-1">
-            {isHindi ? 'क्विक टूल्स' : 'Quick Tools'}
+        {/* Clear Data Reset Option */}
+        {onClearAllData && !isCollapsed && (
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                onClearAllData();
+                onCloseMobile();
+              }}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold text-rose-400/80 hover:bg-rose-950/40 hover:text-rose-200 transition-colors cursor-pointer"
+            >
+              <Trash2 className="w-4 h-4 shrink-0" />
+              <span>{isHindi ? 'डेटा साफ करें' : 'Clean Dashboard Data'}</span>
+            </button>
           </div>
-        </div>
-
-        {/* Quick UPI QR Code */}
-        <button
-          type="button"
-          onClick={() => {
-            onOpenQuickQR();
-            onCloseMobile();
-          }}
-          className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-slate-300 hover:bg-slate-800/60 hover:text-white transition-all cursor-pointer text-left"
-        >
-          <div className="flex items-center gap-3">
-            <QrCode className="w-4 h-4 text-emerald-400" />
-            <div>
-              <div className="font-semibold text-slate-200">{isHindi ? 'पेमेंट QR कोड' : 'Payment UPI QR'}</div>
-              <div className="text-[10px] text-slate-500">{isHindi ? 'तुरंत स्कैन व भुगतान' : 'Scan & Pay'}</div>
-            </div>
-          </div>
-        </button>
-
-        {/* Google Drive / Cloud Sync */}
-        <button
-          type="button"
-          onClick={() => {
-            onOpenDriveModal();
-            onCloseMobile();
-          }}
-          className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-slate-300 hover:bg-slate-800/60 hover:text-white transition-all cursor-pointer text-left"
-        >
-          <div className="flex items-center gap-3">
-            <Cloud className="w-4 h-4 text-sky-400" />
-            <div>
-              <div className="font-semibold text-slate-200">{isHindi ? 'क्लाउड बैकअप' : 'Cloud Sync & Drive'}</div>
-              <div className="text-[10px] text-slate-500">{isHindi ? 'डेटा सुरक्षित रखें' : 'Auto Backup'}</div>
-            </div>
-          </div>
-        </button>
-
-        {/* Business Profile & Settings */}
-        <button
-          type="button"
-          onClick={() => {
-            onOpenSettings();
-            onCloseMobile();
-          }}
-          className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-slate-300 hover:bg-slate-800/60 hover:text-white transition-all cursor-pointer text-left"
-        >
-          <div className="flex items-center gap-3">
-            <Settings className="w-4 h-4 text-slate-400" />
-            <div>
-              <div className="font-semibold text-slate-200">{isHindi ? 'सेटिंग्स व जीएसटी' : 'Settings & GSTIN'}</div>
-              <div className="text-[10px] text-slate-500">{isHindi ? 'कंपनी प्रोफाइल, बैंक' : 'Company & Bank Details'}</div>
-            </div>
-          </div>
-        </button>
-
-        {/* Clean Dashboard & Reset Data */}
-        {onClearAllData && (
-          <button
-            type="button"
-            onClick={() => {
-              onClearAllData();
-              onCloseMobile();
-            }}
-            className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-rose-300/80 hover:bg-rose-950/40 hover:text-rose-200 transition-all cursor-pointer text-left"
-            title="Clean all data and reset dashboard"
-          >
-            <div className="flex items-center gap-3">
-              <Trash2 className="w-4 h-4 text-rose-400" />
-              <div>
-                <div className="font-semibold">{isHindi ? 'डेटा साफ करें' : 'Clean Dashboard Data'}</div>
-                <div className="text-[10px] text-rose-400/60">{isHindi ? 'सभी झूठा/डेमो डेटा हटाएं' : 'Delete all mock/false data'}</div>
-              </div>
-            </div>
-          </button>
         )}
       </div>
 
-      {/* 5. Footer: Plan Upgrade & Language Switch */}
-      <div className="p-3 border-t border-slate-800 bg-slate-950/60 space-y-2">
-        {/* Subscription pill */}
-        <button
-          type="button"
-          onClick={() => {
-            onOpenSubscription();
-            onCloseMobile();
-          }}
-          className="w-full flex items-center justify-between p-2 rounded-xl bg-slate-800/70 hover:bg-slate-800 border border-slate-700/60 text-left transition-colors cursor-pointer"
-        >
-          <div className="flex items-center gap-2">
-            <Crown className="w-4 h-4 text-amber-400" />
-            <div>
-              <div className="text-[11px] font-bold text-white flex items-center gap-1.5">
-                <span>{isPro ? 'Pro Showroom' : 'Vyapar Starter'}</span>
-              </div>
-              <div className="text-[10px] text-slate-400">
-                {isPro ? 'Unlimited Invoices' : `${subscription.invoiceCountThisMonth}/5 Bills used`}
-              </div>
+      {/* 5. User Account & Cloud Sync Status */}
+      <div className={`border-t border-slate-800 bg-slate-950/80 ${isCollapsed ? 'p-2' : 'p-3'}`}>
+        {user ? (
+          <div className={`flex items-center rounded-xl bg-slate-900 border border-slate-800 ${isCollapsed ? 'justify-center p-1.5' : 'justify-between p-2'}`}>
+            <div className={`flex items-center gap-2.5 overflow-hidden ${isCollapsed ? 'justify-center' : 'mr-2'}`}>
+              {user.photoURL ? (
+                <img
+                  src={user.photoURL}
+                  alt=""
+                  className="w-8 h-8 rounded-full border border-slate-700 shrink-0"
+                />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-amber-400 text-slate-950 font-bold text-xs flex items-center justify-center shrink-0">
+                  {user.displayName ? user.displayName[0] : 'U'}
+                </div>
+              )}
+              {!isCollapsed && (
+                <div className="overflow-hidden">
+                  <div className="text-xs font-bold text-white truncate max-w-[120px]">
+                    {user.displayName || 'Google User'}
+                  </div>
+                  <div className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>{isHindi ? 'क्लाउड सिंक' : 'Cloud Synced'}</span>
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
-          <span className="text-[10px] font-bold text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded">
-            {isPro ? 'ACTIVE' : 'UPGRADE'}
-          </span>
-        </button>
 
-        {/* Language switcher */}
-        <button
-          type="button"
-          onClick={onToggleLang}
-          className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-[11px] text-slate-400 hover:text-white transition-colors cursor-pointer border border-slate-800"
-        >
-          <div className="flex items-center gap-1.5">
-            <Globe className="w-3.5 h-3.5 text-slate-400" />
-            <span>{isHindi ? 'भाषा: हिन्दी' : 'Language: English'}</span>
+            {onSignOut && (
+              <button
+                type="button"
+                onClick={() => {
+                  onSignOut();
+                  onCloseMobile();
+                }}
+                className={`p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors cursor-pointer shrink-0 ${isCollapsed ? 'hidden' : ''}`}
+                title={isHindi ? 'साइन आउट' : 'Sign Out'}
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            )}
           </div>
-          <span className="text-[10px] font-bold text-amber-400 uppercase">
-            {isHindi ? 'English' : 'हिन्दी'}
-          </span>
-        </button>
+        ) : (
+          <div>
+            {!isCollapsed ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (onOpenAuthModal) onOpenAuthModal();
+                  onCloseMobile();
+                }}
+                className="w-full flex items-center justify-center gap-2 py-2 px-3 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black rounded-xl text-xs transition-colors cursor-pointer shadow-xs"
+              >
+                <span>{isHindi ? 'लॉगिन / रजिस्टर' : 'Login / Register'}</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  if (onOpenAuthModal) onOpenAuthModal();
+                  onCloseMobile();
+                }}
+                className="w-full p-2 flex justify-center bg-amber-400 hover:bg-amber-300 text-slate-950 font-black rounded-xl cursor-pointer"
+                title="Login / Register"
+              >
+                <Users className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* 6. Footer Language Toggle */}
+      {!isCollapsed && (
+        <div className="p-3 border-t border-slate-800 bg-slate-950/60">
+          <button
+            type="button"
+            onClick={onToggleLang}
+            className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-[11px] text-slate-400 hover:text-white transition-colors cursor-pointer border border-slate-800"
+          >
+            <div className="flex items-center gap-1.5">
+              <Globe className="w-3.5 h-3.5 text-slate-400" />
+              <span>{isHindi ? 'भाषा: हिन्दी' : 'Language: English'}</span>
+            </div>
+            <span className="text-[10px] font-bold text-amber-400 uppercase">
+              {isHindi ? 'English' : 'हिन्दी'}
+            </span>
+          </button>
+        </div>
+      )}
     </div>
   );
 
   return (
     <>
-      {/* Desktop Persistent Sidebar (Zoho / Vyapar Layout) */}
-      <aside className="hidden md:flex flex-col w-64 shrink-0 h-screen sticky top-0 z-30 shadow-xl border-r border-slate-800 no-print">
+      {/* Desktop Persistent Sidebar */}
+      <aside className={`hidden md:flex flex-col shrink-0 h-screen sticky top-0 z-30 shadow-xl border-r border-slate-800 transition-all duration-200 no-print ${
+        isCollapsed ? 'w-18' : 'w-64'
+      }`}>
         {sidebarContent}
       </aside>
 
@@ -385,7 +470,7 @@ export const VyaparSidebar: React.FC<VyaparSidebarProps> = ({
             className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs transition-opacity"
             onClick={onCloseMobile}
           />
-          <div className="relative flex flex-col w-72 max-w-[85vw] h-full shadow-2xl z-10 animate-in slide-in-from-left duration-200">
+          <div className="relative flex-1 flex flex-col max-w-xs w-full bg-slate-900 shadow-2xl animate-in slide-in-from-left duration-200">
             {sidebarContent}
           </div>
         </div>

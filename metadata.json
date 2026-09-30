@@ -1,6 +1,6 @@
 {
-  "name": "Vyapar & Zoho Books Suite",
-  "description": "GST billing, party khata ledger, stock inventory, delivery challans, and day book reports for auto dealerships and retail businesses.",
+  "name": "BahiKhata Business Suite",
+  "description": "Smart billing, digital khata ledger, stock inventory, delivery challans, and day book reports for auto dealerships and retail businesses.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
