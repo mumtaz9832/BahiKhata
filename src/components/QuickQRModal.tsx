@@ -22,13 +22,24 @@ export const QuickQRModal: React.FC<QuickQRModalProps> = ({
 }) => {
   const [dataUrl, setDataUrl] = useState<string>('');
   const [copied, setCopied] = useState<boolean>(false);
+  const [customUpi, setCustomUpi] = useState<string>(upiId || '');
+  const [isEditingUpi, setIsEditingUpi] = useState<boolean>(false);
 
   useEffect(() => {
-    if (!isOpen || !upiId) return;
+    if (upiId) {
+      setCustomUpi(upiId);
+    }
+  }, [upiId]);
 
-    let upiUri = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(
-      payeeName
-    )}&tn=${encodeURIComponent(`Invoice ${invoiceNo}`)}&cu=INR`;
+  const effectiveUpi = (customUpi.trim() || upiId?.trim() || 'merchant@upi');
+  const effectivePayee = payeeName?.trim() || 'BahiKhata Merchant';
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    let upiUri = `upi://pay?pa=${encodeURIComponent(effectiveUpi)}&pn=${encodeURIComponent(
+      effectivePayee
+    )}&tn=${encodeURIComponent(`Invoice ${invoiceNo || 'Payment'}`)}&cu=INR`;
 
     if (amount > 0) {
       upiUri += `&am=${amount.toFixed(2)}`;
@@ -44,12 +55,12 @@ export const QuickQRModal: React.FC<QuickQRModalProps> = ({
     })
       .then((url) => setDataUrl(url))
       .catch((err) => console.error('Failed to generate high-res QR:', err));
-  }, [isOpen, upiId, payeeName, amount, invoiceNo]);
+  }, [isOpen, effectiveUpi, effectivePayee, amount, invoiceNo]);
 
   if (!isOpen) return null;
 
   const copyUpiId = () => {
-    navigator.clipboard.writeText(upiId);
+    navigator.clipboard.writeText(effectiveUpi);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -70,11 +81,11 @@ export const QuickQRModal: React.FC<QuickQRModalProps> = ({
           </style>
         </head>
         <body>
-          <h2>${payeeName}</h2>
+          <h2>${effectivePayee}</h2>
           <p>Scan & Pay via any UPI App (GPay, PhonePe, Paytm)</p>
           <div class="amt">${formatINR(amount)}</div>
           <img src="${dataUrl}" width="260" height="260" />
-          <p style="margin-top: 15px; font-family: monospace;">UPI ID: ${upiId}</p>
+          <p style="margin-top: 15px; font-family: monospace;">UPI ID: ${effectiveUpi}</p>
           <p style="font-size: 12px; color: #64748b;">Invoice Ref: ${invoiceNo}</p>
           <script>
             window.onload = function() { window.print(); window.close(); }
@@ -86,7 +97,12 @@ export const QuickQRModal: React.FC<QuickQRModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-4 no-print animate-in fade-in duration-150">
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-4 no-print animate-in fade-in duration-150"
+    >
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-sm w-full overflow-hidden animate-in zoom-in-95 duration-200">
         {/* Top Header */}
         <div className="px-5 py-4 bg-slate-900 text-white flex items-center justify-between">
@@ -115,7 +131,7 @@ export const QuickQRModal: React.FC<QuickQRModalProps> = ({
             <span className="text-[11px] uppercase font-semibold text-slate-400 tracking-wider">
               Payee Merchant
             </span>
-            <h4 className="font-bold text-slate-900 text-base">{payeeName}</h4>
+            <h4 className="font-bold text-slate-900 text-base">{effectivePayee}</h4>
           </div>
 
           {/* Amount Chip */}
@@ -154,28 +170,58 @@ export const QuickQRModal: React.FC<QuickQRModalProps> = ({
             <span>Works with Google Pay, PhonePe, Paytm, BHIM &amp; Banking UPI</span>
           </div>
 
-          {/* UPI ID copy */}
-          <div className="mt-3 w-full flex items-center justify-between px-3 py-2 bg-slate-50 rounded-lg border border-slate-200 text-xs">
-            <span className="font-mono text-slate-700 font-semibold truncate text-[11px]">
-              {upiId}
-            </span>
-            <button
-              type="button"
-              onClick={copyUpiId}
-              className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:text-emerald-800 transition-colors ml-2 shrink-0 cursor-pointer"
-            >
-              {copied ? (
-                <>
-                  <Check className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Copied</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-3.5 h-3.5 text-slate-500" />
-                  <span>Copy UPI ID</span>
-                </>
-              )}
-            </button>
+          {/* UPI ID copy and inline editor */}
+          <div className="mt-3 w-full space-y-1.5">
+            <div className="flex items-center justify-between px-3 py-2 bg-slate-50 rounded-lg border border-slate-200 text-xs">
+              <span className="font-mono text-slate-700 font-semibold truncate text-[11px]">
+                {effectiveUpi}
+              </span>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsEditingUpi(!isEditingUpi)}
+                  className="text-[10px] text-slate-500 hover:text-slate-800 underline font-medium cursor-pointer"
+                >
+                  {isEditingUpi ? 'Done' : 'Change'}
+                </button>
+                <button
+                  type="button"
+                  onClick={copyUpiId}
+                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:text-emerald-800 transition-colors cursor-pointer"
+                >
+                  {copied ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Copied</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Copy</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {isEditingUpi && (
+              <div className="flex items-center gap-1.5 animate-in fade-in duration-100">
+                <input
+                  type="text"
+                  value={customUpi}
+                  onChange={(e) => setCustomUpi(e.target.value)}
+                  placeholder="Enter UPI ID (e.g. yourname@okaxis)"
+                  className="flex-1 px-2.5 py-1 text-xs border border-amber-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-400 font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={() => setIsEditingUpi(false)}
+                  className="px-2.5 py-1 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold rounded-lg text-xs cursor-pointer"
+                >
+                  Apply
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Actions */}

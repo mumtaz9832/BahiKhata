@@ -7,6 +7,11 @@ import {
   Percent,
   IndianRupee,
   ShoppingBag,
+  Printer,
+  Save,
+  Check,
+  Eye,
+  FileCheck2,
 } from 'lucide-react';
 
 interface RetailFormProps {
@@ -16,6 +21,11 @@ interface RetailFormProps {
   onInvoiceNoChange: (no: string) => void;
   invoiceDate: string;
   onInvoiceDateChange: (date: string) => void;
+  onSave?: () => void;
+  onPrint?: () => void;
+  onSaveAndPrint?: () => void;
+  onPreview?: () => void;
+  saveSuccess?: boolean;
 }
 
 export const RetailForm: React.FC<RetailFormProps> = ({
@@ -25,6 +35,11 @@ export const RetailForm: React.FC<RetailFormProps> = ({
   onInvoiceNoChange,
   invoiceDate,
   onInvoiceDateChange,
+  onSave,
+  onPrint,
+  onSaveAndPrint,
+  onPreview,
+  saveSuccess = false,
 }) => {
   const [focusTab, setFocusTab] = useState<'all' | 'customer' | 'items' | 'settlement'>('all');
   const recalculateTotals = (items: RetailItem[], discountVal: number, advanceVal: number) => {
@@ -104,7 +119,25 @@ export const RetailForm: React.FC<RetailFormProps> = ({
   };
 
   const removeItem = (index: number) => {
-    if (data.items.length <= 1) return;
+    if (data.items.length <= 1) {
+      const resetItem: RetailItem = {
+        id: 'item_' + Date.now(),
+        description: '',
+        hsn: '',
+        qty: 1,
+        unit: 'Pcs',
+        rate: 0,
+        gstPercent: 18,
+        amount: 0,
+      };
+      const totals = recalculateTotals([resetItem], data.discount, data.advanceReceived);
+      onChange({
+        ...data,
+        items: [resetItem],
+        ...totals,
+      });
+      return;
+    }
     const updatedItems = data.items.filter((_, i) => i !== index);
     const totals = recalculateTotals(updatedItems, data.discount, data.advanceReceived);
 
@@ -387,9 +420,8 @@ export const RetailForm: React.FC<RetailFormProps> = ({
                 <button
                   type="button"
                   onClick={() => removeItem(idx)}
-                  disabled={data.items.length <= 1}
-                  className="p-1.5 text-slate-400 hover:text-rose-600 disabled:opacity-30 cursor-pointer"
-                  title="Remove item"
+                  className="p-1.5 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                  title="Remove or clear item"
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
@@ -477,6 +509,78 @@ export const RetailForm: React.FC<RetailFormProps> = ({
             <span className={`text-xl sm:text-2xl font-black font-mono ${data.balanceAmount > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
               ₹{Math.round(data.balanceAmount).toLocaleString('en-IN')}
             </span>
+          </div>
+        </div>
+
+        {/* Bill Save & Print Actions Bar */}
+        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3 mt-4">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+              <FileCheck2 className="w-4 h-4 text-emerald-600" />
+              <span>Bill Finalization &amp; Printing</span>
+            </span>
+            {saveSuccess && (
+              <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full flex items-center gap-1 animate-in fade-in">
+                <Check className="w-3.5 h-3.5" />
+                <span>Invoice Saved!</span>
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            {/* 1. Save & Print Primary Button */}
+            <button
+              type="button"
+              onClick={onSaveAndPrint}
+              className="w-full py-3.5 px-4 bg-amber-400 hover:bg-amber-300 active:bg-amber-500 text-slate-950 font-black rounded-xl text-xs sm:text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer touch-manipulation min-h-[46px]"
+              title="Save bill into Khata and open print dialog"
+            >
+              <Printer className="w-4 h-4 text-slate-950" />
+              <span>Save &amp; Print Bill</span>
+            </button>
+
+            {/* 2. Save Only Button */}
+            <button
+              type="button"
+              onClick={onSave}
+              className="w-full py-3.5 px-4 bg-slate-900 hover:bg-slate-800 active:bg-slate-950 text-white font-bold rounded-xl text-xs sm:text-sm shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer touch-manipulation min-h-[46px]"
+              title="Save bill into Khata ledger"
+            >
+              {saveSuccess ? (
+                <>
+                  <Check className="w-4 h-4 text-emerald-400" />
+                  <span>Saved to Khata!</span>
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4 text-amber-400" />
+                  <span>Save Bill to Khata</span>
+                </>
+              )}
+            </button>
+
+            {/* 3. Direct Print & Preview Buttons */}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={onPrint}
+                className="flex-1 py-3 px-3 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-800 font-bold rounded-xl text-xs sm:text-sm border border-slate-300 transition-all flex items-center justify-center gap-1.5 cursor-pointer touch-manipulation min-h-[46px]"
+                title="Print bill directly"
+              >
+                <Printer className="w-4 h-4 text-slate-700" />
+                <span>Print</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={onPreview}
+                className="flex-1 py-3 px-3 bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-200 text-indigo-700 font-bold rounded-xl text-xs sm:text-sm border border-indigo-200 transition-all flex items-center justify-center gap-1.5 cursor-pointer touch-manipulation min-h-[46px]"
+                title="View Live Invoice Preview"
+              >
+                <Eye className="w-4 h-4 text-indigo-600" />
+                <span>Preview</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>

@@ -42,6 +42,10 @@ import {
   purgeAllFalseData,
   syncProfileToFirestore,
   loadProfileFromFirestore,
+  getAllBusinesses,
+  getActiveBusinessId,
+  setActiveBusinessId,
+  saveBusiness,
 } from './utils/storage';
 import { exportElementToPDF, triggerPrintDialog, generatePDFBlob } from './utils/pdfExport';
 import { initAuth, googleSignIn, logout, getAccessToken } from './utils/googleAuth';
@@ -64,6 +68,8 @@ import { AddCustomerModal } from './components/AddCustomerModal';
 import { AddProductModal } from './components/AddProductModal';
 import { VyaparSidebar } from './components/VyaparSidebar';
 import { AuthModal } from './components/AuthModal';
+import { WelcomeScreen } from './components/WelcomeScreen';
+import { MultiStepRegistrationModal } from './components/MultiStepRegistrationModal';
 import { SingleRegistrationModal, RegistrationData } from './components/SingleRegistrationModal';
 import { OnboardingModal } from './components/OnboardingModal';
 import { MobileBottomNav } from './components/MobileBottomNav';
@@ -224,9 +230,28 @@ export default function App() {
     email?: string | null;
     phoneNumber?: string | null;
   } | null>(null);
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(() => {
-    return localStorage.getItem('bahikhata_guest_mode') !== 'true';
+  const [businesses, setBusinesses] = useState<BusinessProfile[]>(() => getAllBusinesses());
+
+  // Helper to verify if an authenticated user session is active
+  const isSessionAuthenticated = () => {
+    if (localStorage.getItem('bahikhata_authenticated') === 'true') return true;
+    if (localStorage.getItem('bahikhata_guest_mode') === 'true') return true;
+    const currentProf = getBusinessProfile();
+    return Boolean(
+      currentProf &&
+      currentProf.registrationCompleted &&
+      currentProf.name &&
+      currentProf.name !== 'BahiKhata Business'
+    );
+  };
+
+  // Welcome Screen is shown on startup when the user is not authenticated
+  const [isWelcomeScreenOpen, setIsWelcomeScreenOpen] = useState<boolean>(() => {
+    return !isSessionAuthenticated();
   });
+
+  const [isMultiStepRegistrationOpen, setIsMultiStepRegistrationOpen] = useState<boolean>(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [isSingleRegistrationOpen, setIsSingleRegistrationOpen] = useState<boolean>(false);
   const [isOnboardingOpen, setIsOnboardingOpen] = useState<boolean>(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
@@ -256,15 +281,13 @@ export default function App() {
       setCustomers(getSavedCustomers());
       setProducts(getSavedProducts());
 
-      // If user is guest/local and registration has never been completed, prompt single registration
-      if (
-        localStorage.getItem('bahikhata_guest_mode') === 'true' &&
-        !reconciledProfile.registrationCompleted &&
-        reconciledProfile.name === 'BahiKhata Business' &&
-        !reconciledProfile.phone
-      ) {
-        setRegistrationAuthMethod('email_mobile');
-        setIsSingleRegistrationOpen(true);
+      // If business has already registered, align dashboard mode
+      if (reconciledProfile.registrationCompleted) {
+        const isAuto = Boolean(
+          reconciledProfile.industryCategory?.toLowerCase().includes('auto') ||
+          reconciledProfile.industryType?.toLowerCase().includes('auto')
+        );
+        setMode(isAuto ? 'auto_dealer' : 'general_retail');
       }
     });
 
@@ -275,17 +298,21 @@ export default function App() {
         setAccessToken(token);
         setIsAuthLoading(false);
         if (authUser) {
-          setIsAuthModalOpen(false);
           // Check if remote profile exists in Firestore
           const remoteProfile = await loadProfileFromFirestore(authUser.uid);
           const activeProf = remoteProfile || getBusinessProfile();
           setProfile(activeProf);
 
-          // If Google authentication is valid but business registration is incomplete,
-          // launch the Single Registration Form with pre-filled name and email
-          if (!activeProf.registrationCompleted) {
-            setRegistrationAuthMethod('google');
-            setIsSingleRegistrationOpen(true);
+          if (activeProf.registrationCompleted && activeProf.name && activeProf.name !== 'BahiKhata Business') {
+            localStorage.setItem('bahikhata_authenticated', 'true');
+            setIsWelcomeScreenOpen(false);
+            setIsAuthModalOpen(false);
+            setIsMultiStepRegistrationOpen(false);
+            const isAuto = Boolean(
+              activeProf.industryCategory?.toLowerCase().includes('auto') ||
+              activeProf.industryType?.toLowerCase().includes('auto')
+            );
+            setMode(isAuto ? 'auto_dealer' : 'general_retail');
           }
         }
       },
@@ -372,10 +399,10 @@ export default function App() {
         setProfile(currProfile);
 
         // Google authentication alone is not considered completed registration
-        // Open single business registration form if registrationCompleted is false
+        // Open multi-step business registration form if registrationCompleted is false
         if (!currProfile.registrationCompleted) {
           setRegistrationAuthMethod('google');
-          setIsSingleRegistrationOpen(true);
+          setIsMultiStepRegistrationOpen(true);
         }
       }
     } catch (err) {
@@ -394,7 +421,65 @@ export default function App() {
     });
     setRegistrationAuthMethod('email_mobile');
     setIsAuthModalOpen(false);
-    setIsSingleRegistrationOpen(true);
+    setIsMultiStepRegistrationOpen(true);
+  };
+
+  // Complete Multi-Step Business Registration
+  const handleCompleteMultiStepRegistration = async (business: BusinessProfile) => {
+    try {
+      const effectiveUserId = user?.uid || business.userId || `bahi_${Date.now()}`;
+      const prepared: BusinessProfile = {
+        ...business,
+        userId: effectiveUserId,
+        registrationCompleted: true,
+        onboardingCompleted: true,
+        updatedAt: new Date().toISOString(),
+      };
+
+      // 1. Immediately persist profile and business list locally
+      const updatedBusinesses = saveBusiness(prepared);
+      saveBusinessProfile(prepared);
+      setBusinesses(updatedBusinesses);
+      setProfile(prepared);
+      localStorage.setItem('bahikhata_authenticated', 'true');
+      localStorage.removeItem('bahikhata_guest_mode');
+      localStorage.setItem('bahikhata_onboarded', 'true');
+
+      // Align dashboard mode based on the business's industry category
+      const isAuto = Boolean(
+        prepared.industryCategory?.toLowerCase().includes('auto') ||
+        prepared.industryType?.toLowerCase().includes('auto')
+      );
+      setMode(isAuto ? 'auto_dealer' : 'general_retail');
+
+      // 2. Immediately close registration modals and show Home Dashboard
+      setIsMultiStepRegistrationOpen(false);
+      setIsWelcomeScreenOpen(false);
+      setIsSingleRegistrationOpen(false);
+      setIsAuthModalOpen(false);
+      setIsOnboardingOpen(false);
+      setCurrentView('home');
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2500);
+
+      // 3. Background Firestore sync ONLY for authenticated Firebase users (non-blocking)
+      if (user?.uid) {
+        try {
+          syncProfileToFirestore(prepared, user.uid).catch((err) => {
+            console.warn('Background Firestore profile sync:', err);
+          });
+        } catch (err) {
+          console.warn('Firestore profile sync error:', err);
+        }
+      }
+    } catch (err) {
+      console.error('Registration completion error:', err);
+      // Fallback: Ensure modal closes and dashboard is unlocked
+      localStorage.setItem('bahikhata_authenticated', 'true');
+      setIsMultiStepRegistrationOpen(false);
+      setIsWelcomeScreenOpen(false);
+      setCurrentView('home');
+    }
   };
 
   // Complete Single Business Registration
@@ -426,6 +511,7 @@ export default function App() {
 
     setProfile(updatedProf);
     saveBusinessProfile(updatedProf);
+    localStorage.setItem('bahikhata_authenticated', 'true');
     localStorage.removeItem('bahikhata_guest_mode');
     localStorage.setItem('bahikhata_onboarded', 'true');
 
@@ -438,6 +524,8 @@ export default function App() {
     }
 
     setIsSingleRegistrationOpen(false);
+    setIsMultiStepRegistrationOpen(false);
+    setIsWelcomeScreenOpen(false);
     setIsAuthModalOpen(false);
     setIsOnboardingOpen(false);
     setCurrentView('home');
@@ -449,6 +537,11 @@ export default function App() {
     await logout();
     setUser(null);
     setAccessToken(null);
+    localStorage.removeItem('bahikhata_authenticated');
+    localStorage.removeItem('bahikhata_guest_mode');
+    setIsWelcomeScreenOpen(true);
+    setIsAuthModalOpen(false);
+    setIsMultiStepRegistrationOpen(false);
   };
 
   // Upload current invoice or challan to Google Drive
@@ -477,6 +570,11 @@ export default function App() {
 
     setIsUploadingToDrive(true);
     setDriveUploadSuccessLink(null);
+
+    if (mobileTab === 'form') {
+      setMobileTab('preview');
+      await new Promise((r) => setTimeout(r, 120));
+    }
 
     const elementId =
       previewTab === 'invoice'
@@ -520,6 +618,23 @@ export default function App() {
     setSubscription(getSubscriptionState());
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 2000);
+  };
+
+  const handleSaveAndPrint = async () => {
+    handleSaveToKhata();
+    if (mobileTab === 'form') {
+      setMobileTab('preview');
+      await new Promise((r) => setTimeout(r, 150));
+    }
+    triggerPrintDialog();
+  };
+
+  const handleFormDirectPrint = async () => {
+    if (mobileTab === 'form') {
+      setMobileTab('preview');
+      await new Promise((r) => setTimeout(r, 150));
+    }
+    triggerPrintDialog();
   };
 
   const handleNewInvoice = () => {
@@ -759,6 +874,11 @@ export default function App() {
   };
 
   const handleDownloadPDF = async () => {
+    if (mobileTab === 'form') {
+      setMobileTab('preview');
+      await new Promise((r) => setTimeout(r, 120));
+    }
+
     const elementId =
       previewTab === 'invoice'
         ? 'printable-invoice-document'
@@ -775,6 +895,11 @@ export default function App() {
   const handleShareViaEmail = async () => {
     setIsEmailPreparing(true);
     setEmailShareNotice(null);
+
+    if (mobileTab === 'form') {
+      setMobileTab('preview');
+      await new Promise((r) => setTimeout(r, 120));
+    }
 
     const elementId =
       previewTab === 'invoice'
@@ -941,6 +1066,15 @@ export default function App() {
           }
         }}
         profile={profile}
+        businesses={businesses}
+        onSelectBusiness={(id) => {
+          const target = setActiveBusinessId(id);
+          setProfile(target);
+          setBusinesses(getAllBusinesses());
+        }}
+        onAddNewBusiness={() => {
+          setIsMultiStepRegistrationOpen(true);
+        }}
         subscription={subscription}
         pendingBalanceCount={pendingCount}
         isOpenMobile={isSidebarOpenMobile}
@@ -996,6 +1130,7 @@ export default function App() {
           onOpenAuthModal={() => setIsAuthModalOpen(true)}
           onSignOut={handleGoogleSignOut}
           syncStatus={user ? 'synced' : 'offline'}
+          profile={profile}
         />
 
         <div className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 md:pb-12 print:p-0 print:m-0 print:max-w-none print:w-full">
@@ -1034,6 +1169,7 @@ export default function App() {
                 setWhatsAppInvoice(inv);
                 setIsWhatsAppOpen(true);
               }}
+              onNavigateToReports={() => setCurrentView('reports')}
               onRecordPayment={handleRecordPayment}
               onClearAllData={handleClearAllData}
               onSwitchMode={(newMode) => {
@@ -1142,10 +1278,37 @@ export default function App() {
             </div>
 
             <div className="flex items-center gap-2 text-xs">
-              <span className="font-bold text-slate-500">
+              <span className="font-bold text-slate-500 hidden sm:inline">
                 Invoice No:{' '}
                 <span className="font-mono text-slate-900 font-black">{invoiceNo}</span>
               </span>
+              <button
+                type="button"
+                onClick={handleSaveToKhata}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+                title="Save bill into Khata"
+              >
+                {saveSuccess ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Saved!</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Save Bill</span>
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveAndPrint}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 rounded-xl text-xs font-black transition-all shadow-xs cursor-pointer"
+                title="Save & Print Bill"
+              >
+                <Printer className="w-3.5 h-3.5 text-slate-950" />
+                <span>Print Bill</span>
+              </button>
             </div>
           </div>
 
@@ -1207,6 +1370,11 @@ export default function App() {
                 deliveryTime={deliveryTime}
                 onDeliveryTimeChange={setDeliveryTime}
                 lang={lang}
+                onSave={handleSaveToKhata}
+                onPrint={handleFormDirectPrint}
+                onSaveAndPrint={handleSaveAndPrint}
+                onPreview={() => setMobileTab('preview')}
+                saveSuccess={saveSuccess}
               />
             ) : (
               <RetailForm
@@ -1216,6 +1384,11 @@ export default function App() {
                 onInvoiceNoChange={setInvoiceNo}
                 invoiceDate={invoiceDate}
                 onInvoiceDateChange={setInvoiceDate}
+                onSave={handleSaveToKhata}
+                onPrint={handleFormDirectPrint}
+                onSaveAndPrint={handleSaveAndPrint}
+                onPreview={() => setMobileTab('preview')}
+                saveSuccess={saveSuccess}
               />
             )}
           </div>
@@ -1427,33 +1600,35 @@ export default function App() {
 
             {/* Document Render Canvas */}
             <div className="overflow-x-auto pb-8">
-              {previewTab === 'invoice' ? (
-                <InvoiceDocument
-                  invoice={activeInvoice}
-                  id="printable-invoice-document"
-                  hasWatermark={subscription.hasWatermark}
-                  onPrint={triggerPrintDialog}
-                  onDownloadPDF={handleDownloadPDF}
-                  onShareViaEmail={handleShareViaEmail}
-                  onOpenWhatsApp={openWhatsAppWithCurrent}
-                  onOpenQR={() => setIsQuickQROpen(true)}
-                  isPdfGenerating={isPdfGenerating}
-                  isEmailPreparing={isEmailPreparing}
-                />
-              ) : (
-                <DeliveryChallanDocument
-                  invoice={activeInvoice}
-                  id="printable-challan-document"
-                  hasWatermark={subscription.hasWatermark}
-                  onPrint={triggerPrintDialog}
-                  onDownloadPDF={handleDownloadPDF}
-                  onShareViaEmail={handleShareViaEmail}
-                  onOpenWhatsApp={openWhatsAppWithCurrent}
-                  onOpenQR={() => setIsQuickQROpen(true)}
-                  isPdfGenerating={isPdfGenerating}
-                  isEmailPreparing={isEmailPreparing}
-                />
-              )}
+              <div key={previewTab} className="animate-fade-in-preview w-full">
+                {previewTab === 'invoice' ? (
+                  <InvoiceDocument
+                    invoice={activeInvoice}
+                    id="printable-invoice-document"
+                    hasWatermark={subscription.hasWatermark}
+                    onPrint={triggerPrintDialog}
+                    onDownloadPDF={handleDownloadPDF}
+                    onShareViaEmail={handleShareViaEmail}
+                    onOpenWhatsApp={openWhatsAppWithCurrent}
+                    onOpenQR={() => setIsQuickQROpen(true)}
+                    isPdfGenerating={isPdfGenerating}
+                    isEmailPreparing={isEmailPreparing}
+                  />
+                ) : (
+                  <DeliveryChallanDocument
+                    invoice={activeInvoice}
+                    id="printable-challan-document"
+                    hasWatermark={subscription.hasWatermark}
+                    onPrint={triggerPrintDialog}
+                    onDownloadPDF={handleDownloadPDF}
+                    onShareViaEmail={handleShareViaEmail}
+                    onOpenWhatsApp={openWhatsAppWithCurrent}
+                    onOpenQR={() => setIsQuickQROpen(true)}
+                    isPdfGenerating={isPdfGenerating}
+                    isEmailPreparing={isEmailPreparing}
+                  />
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -1611,7 +1786,7 @@ export default function App() {
         onSave={handleSaveProfile}
         onClearAllData={handleClearAllData}
         onOpenRegistrationWizard={() => {
-          setIsSingleRegistrationOpen(true);
+          setIsMultiStepRegistrationOpen(true);
         }}
       />
 
@@ -1629,28 +1804,90 @@ export default function App() {
         isUploadingCurrent={isUploadingToDrive}
       />
 
+      {/* Professional Authentication Welcome Screen on Startup */}
+      <WelcomeScreen
+        isOpen={isWelcomeScreenOpen}
+        onOpenLogin={() => {
+          setIsWelcomeScreenOpen(false);
+          setIsAuthModalOpen(true);
+        }}
+        onOpenRegister={() => {
+          setIsWelcomeScreenOpen(false);
+          setIsMultiStepRegistrationOpen(true);
+        }}
+        onContinueAsGuest={() => {
+          localStorage.setItem('bahikhata_guest_mode', 'true');
+          setIsWelcomeScreenOpen(false);
+        }}
+        lang={lang}
+        onToggleLang={handleToggleLang}
+      />
+
       {/* Primary Authentication Modal (Login & Access) */}
       <AuthModal
         isOpen={isAuthModalOpen}
-        onClose={() => setIsAuthModalOpen(false)}
+        onClose={() => {
+          setIsAuthModalOpen(false);
+          if (!isSessionAuthenticated()) {
+            setIsWelcomeScreenOpen(true);
+          }
+        }}
         user={user}
         isLoading={isAuthLoading}
         onGoogleSignIn={handleGoogleSignIn}
         onOpenRegister={() => {
           setIsAuthModalOpen(false);
-          setIsSingleRegistrationOpen(true);
+          setIsMultiStepRegistrationOpen(true);
         }}
         onContinueAsGuest={() => {
           localStorage.setItem('bahikhata_guest_mode', 'true');
           setIsAuthModalOpen(false);
+          setIsWelcomeScreenOpen(false);
+        }}
+        onOtpLoginSuccess={(loggedPhone) => {
+          localStorage.setItem('bahikhata_authenticated', 'true');
+          localStorage.removeItem('bahikhata_guest_mode');
+          const clean = loggedPhone.replace(/\D/g, '').slice(-10);
+          const allBiz = getAllBusinesses();
+          const found = allBiz.find(
+            (b) => b.mobileNumber?.includes(clean) || b.phone?.includes(clean)
+          );
+          if (found && found.id) {
+            setActiveBusinessId(found.id);
+            setProfile(found);
+            setBusinesses(getAllBusinesses());
+            const isAuto = Boolean(
+              found.industryCategory?.toLowerCase().includes('auto') ||
+              found.industryType?.toLowerCase().includes('auto')
+            );
+            setMode(isAuto ? 'auto_dealer' : 'general_retail');
+          } else {
+            const updated: BusinessProfile = {
+              ...profile,
+              mobileNumber: clean,
+              phone: clean,
+              mobileVerified: true,
+            };
+            saveBusinessProfile(updated);
+            setProfile(updated);
+          }
+          setIsAuthModalOpen(false);
+          setIsWelcomeScreenOpen(false);
+          setCurrentView('home');
         }}
         lang={lang}
       />
 
-      {/* Single Business Registration & Onboarding Modal */}
-      <SingleRegistrationModal
-        isOpen={isSingleRegistrationOpen}
-        onClose={() => setIsSingleRegistrationOpen(false)}
+      {/* 5-Step Advanced Multi-Industry Business Registration Modal */}
+      <MultiStepRegistrationModal
+        isOpen={isMultiStepRegistrationOpen}
+        onClose={() => {
+          setIsMultiStepRegistrationOpen(false);
+          if (!isSessionAuthenticated()) {
+            localStorage.setItem('bahikhata_guest_mode', 'true');
+          }
+          setIsWelcomeScreenOpen(false);
+        }}
         initialUser={
           user
             ? {
@@ -1663,7 +1900,38 @@ export default function App() {
         }
         initialProfile={profile}
         isGoogleAuthenticated={Boolean(user && user.email)}
-        canCancel={profile.registrationCompleted === true}
+        canCancel={true}
+        onComplete={handleCompleteMultiStepRegistration}
+        onSwitchToLogin={() => {
+          setIsMultiStepRegistrationOpen(false);
+          setIsAuthModalOpen(true);
+        }}
+        lang={lang}
+      />
+
+      {/* Single Business Registration & Onboarding Modal (Fallback) */}
+      <SingleRegistrationModal
+        isOpen={isSingleRegistrationOpen}
+        onClose={() => {
+          setIsSingleRegistrationOpen(false);
+          if (!isSessionAuthenticated()) {
+            localStorage.setItem('bahikhata_guest_mode', 'true');
+          }
+          setIsWelcomeScreenOpen(false);
+        }}
+        initialUser={
+          user
+            ? {
+                uid: user.uid,
+                displayName: user.displayName,
+                email: user.email,
+                phoneNumber: user.phoneNumber,
+              }
+            : temporaryAccountUser
+        }
+        initialProfile={profile}
+        isGoogleAuthenticated={Boolean(user && user.email)}
+        canCancel={true}
         onRegister={handleCompleteSingleRegistration}
         onSwitchToLogin={() => {
           setIsSingleRegistrationOpen(false);

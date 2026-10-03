@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   TrendingUp,
 } from 'lucide-react';
+import { SalesPerformanceChart } from './SalesPerformanceChart';
 
 interface ReportsViewProps {
   invoices: SavedInvoice[];
@@ -200,7 +201,10 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         </div>
       </div>
 
-      {/* 3. GSTR-1 Tax Summary Card */}
+      {/* 3. Visual Sales Performance & Growth Chart (Recharts) */}
+      <SalesPerformanceChart invoices={invoices} lang={lang} />
+
+      {/* 4. GSTR-1 Tax Summary Card */}
       <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-6 space-y-4">
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
           <div>

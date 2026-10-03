@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AppMode, AppLanguage, SubscriptionState, AppView } from '../types';
+import { AppMode, AppLanguage, SubscriptionState, AppView, BusinessProfile } from '../types';
 import { User } from 'firebase/auth';
 import { BahiKhataLogo } from './BahiKhataLogo';
 import {
@@ -42,6 +42,7 @@ interface HeaderProps {
   onOpenAuthModal?: () => void;
   onSignOut?: () => void;
   syncStatus?: 'synced' | 'offline';
+  profile?: BusinessProfile;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -65,6 +66,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenAuthModal,
   onSignOut,
   syncStatus = 'offline',
+  profile,
 }) => {
   const isPro = subscription && subscription.tier !== 'free';
   const isHindi = lang === 'hi';
@@ -128,9 +130,11 @@ export const Header: React.FC<HeaderProps> = ({
               <h1 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
                 {getViewTitle()}
               </h1>
-              <span className="hidden lg:inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
-                {mode === 'auto_dealer' ? '🚗 Auto Showroom' : '🏪 General Retail'}
-              </span>
+              {profile?.industryCategory ? (
+                <span className="hidden lg:inline-flex items-center text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-950 border border-amber-300 shadow-2xs">
+                  🏢 {profile.industryCategory}
+                </span>
+              ) : null}
             </div>
           </div>
 

@@ -3,7 +3,7 @@ import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
-import { otpRouter } from './src/server/otpRouter';
+import { otpRouter } from './src/server/otpRouter.ts';
 
 dotenv.config();
 

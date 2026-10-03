@@ -241,43 +241,19 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
               </button>
             </div>
 
-            {/* 2. Business Mode Switcher */}
-            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block">
-                Business Mode
+            {/* 2. Registered Business Information */}
+            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">
+                Active Business Profile
               </span>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => onModeChange('auto_dealer')}
-                  className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
-                    mode === 'auto_dealer'
-                      ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
-                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
-                  }`}
-                >
-                  <div className="flex items-center gap-1.5 font-bold text-xs">
-                    <Car className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Auto Dealer</span>
-                  </div>
-                  <p className="text-[10px] opacity-75 mt-0.5">2W, 4W, EV, Chassis &amp; Challan</p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => onModeChange('general_retail')}
-                  className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
-                    mode === 'general_retail'
-                      ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
-                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
-                  }`}
-                >
-                  <div className="flex items-center gap-1.5 font-bold text-xs">
-                    <Store className="w-3.5 h-3.5 text-sky-400" />
-                    <span>General Retail</span>
-                  </div>
-                  <p className="text-[10px] opacity-75 mt-0.5">Kirana, Shop, GST items &amp; Spares</p>
-                </button>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-black text-slate-900">{profile.name || profile.businessName}</h4>
+                  <p className="text-xs text-amber-700 font-bold">{profile.industryCategory || 'Scrap & Recycling'}</p>
+                </div>
+                <span className="text-[10px] font-bold bg-amber-100 text-amber-900 px-2.5 py-1 rounded-full border border-amber-300">
+                  {profile.businessModels?.join(', ') || profile.businessType || 'Wholesale'}
+                </span>
               </div>
             </div>
 

@@ -1,6 +1,6 @@
 {
   "name": "BahiKhata Business Suite",
-  "description": "Smart billing, digital khata ledger, stock inventory, delivery challans, and day book reports for auto dealerships and retail businesses.",
+  "description": "Multi-industry smart billing, weighbridge & scrap recycling, project khata, bulk wholesale, manufacturing BOM, inventory, delivery challans, and GST day book.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

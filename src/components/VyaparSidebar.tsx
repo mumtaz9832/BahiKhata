@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { User } from 'firebase/auth';
 import {
   AppView,
@@ -19,8 +19,6 @@ import {
   Settings,
   Cloud,
   Crown,
-  Car,
-  Store,
   Globe,
   ChevronRight,
   X,
@@ -30,15 +28,32 @@ import {
   FileText,
   PanelLeftClose,
   PanelLeft,
+  Building2,
+  ChevronsUpDown,
+  Check,
+  Plus,
+  Truck,
+  Recycle,
+  HardHat,
+  Factory,
+  Boxes,
+  Briefcase,
+  Layers,
+  Wrench,
+  DollarSign,
+  Wallet,
 } from 'lucide-react';
 import { BahiKhataLogo } from './BahiKhataLogo';
 
 interface VyaparSidebarProps {
   currentView: AppView;
   onNavigate: (view: AppView) => void;
-  mode: AppMode;
-  onModeChange: (mode: AppMode) => void;
+  mode?: AppMode;
+  onModeChange?: (mode: AppMode) => void;
   profile: BusinessProfile;
+  businesses?: BusinessProfile[];
+  onSelectBusiness?: (id: string) => void;
+  onAddNewBusiness?: () => void;
   subscription: SubscriptionState;
   pendingBalanceCount: number;
   isOpenMobile: boolean;
@@ -66,6 +81,9 @@ export const VyaparSidebar: React.FC<VyaparSidebarProps> = ({
   mode,
   onModeChange,
   profile,
+  businesses = [],
+  onSelectBusiness,
+  onAddNewBusiness,
   subscription,
   pendingBalanceCount,
   isOpenMobile,
@@ -88,6 +106,65 @@ export const VyaparSidebar: React.FC<VyaparSidebarProps> = ({
 }) => {
   const isPro = subscription && subscription.tier !== 'free';
   const isHindi = lang === 'hi';
+  const [isSwitcherOpen, setIsSwitcherOpen] = useState(false);
+
+  // Industry & Model resolution
+  const currentIndustry = profile.industryCategory || profile.industryType || 'Scrap & Recycling';
+  const currentBusinessType =
+    profile.businessModels && profile.businessModels.length > 0
+      ? profile.businessModels.join(', ')
+      : profile.businessType || 'Wholesale';
+
+  // Dynamic industry-specific module
+  const industryLower = currentIndustry.toLowerCase();
+  const modelsLower = (profile.businessModels || []).map((m) => m.toLowerCase());
+
+  let specializedModule = {
+    label: isHindi ? 'विशेषज्ञ मॉड्यूल' : 'Industry Module',
+    icon: Layers,
+    action: () => onNavigate('sales'),
+  };
+
+  if (industryLower.includes('scrap') || industryLower.includes('recycl')) {
+    specializedModule = {
+      label: isHindi ? 'स्क्रैप वजन व कांटा' : 'Scrap & Weighbridge',
+      icon: Recycle,
+      action: () => {
+        onNewInvoice();
+        onNavigate('generate_bill');
+      },
+    };
+  } else if (industryLower.includes('construct') || industryLower.includes('building') || modelsLower.includes('contractor')) {
+    specializedModule = {
+      label: isHindi ? 'प्रोजेक्ट्स व साइट्स' : 'Projects & Sites',
+      icon: HardHat,
+      action: () => onNavigate('items'),
+    };
+  } else if (industryLower.includes('manufactur') || industryLower.includes('industrial') || modelsLower.includes('manufacturer')) {
+    specializedModule = {
+      label: isHindi ? 'उत्पादन व सामग्री (BOM)' : 'Production & BOM',
+      icon: Factory,
+      action: () => onNavigate('items'),
+    };
+  } else if (modelsLower.includes('wholesale') || modelsLower.includes('distributor')) {
+    specializedModule = {
+      label: isHindi ? 'थोक आर्डर व डीलर' : 'Bulk Orders & Dealers',
+      icon: Boxes,
+      action: () => onNavigate('sales'),
+    };
+  } else if (industryLower.includes('automobile') || industryLower.includes('vehicle') || industryLower.includes('ev')) {
+    specializedModule = {
+      label: isHindi ? 'वाहन चेसिस व स्टॉक' : 'Vehicle Inventory & VIN',
+      icon: Truck,
+      action: () => onNavigate('items'),
+    };
+  } else if (modelsLower.includes('service provider') || industryLower.includes('services')) {
+    specializedModule = {
+      label: isHindi ? 'जॉब कार्ड व वर्क आर्डर' : 'Job Cards & Services',
+      icon: Wrench,
+      action: () => onNavigate('sales'),
+    };
+  }
 
   const navItems = [
     {
@@ -106,6 +183,12 @@ export const VyaparSidebar: React.FC<VyaparSidebarProps> = ({
       icon: Users,
     },
     {
+      id: 'suppliers' as const,
+      label: isHindi ? 'सप्लायर व वेंडर' : 'Suppliers',
+      icon: Truck,
+      action: () => onNavigate('parties'),
+    },
+    {
       id: 'khata' as const,
       label: isHindi ? 'डिजिटल खाता' : 'Digital Khata',
       icon: BookOpen,
@@ -114,19 +197,31 @@ export const VyaparSidebar: React.FC<VyaparSidebarProps> = ({
     },
     {
       id: 'items' as AppView,
-      label: isHindi ? 'सामान व उत्पाद' : 'Products',
+      label: isHindi ? 'सामान व सेवाएं' : 'Products & Services',
       icon: Package,
     },
     {
       id: 'inventory' as const,
       label: isHindi ? 'स्टॉक इन्वेंट्री' : 'Inventory',
-      icon: Store,
+      icon: Boxes,
       action: () => onNavigate('items'),
+    },
+    {
+      id: 'specialized' as const,
+      label: specializedModule.label,
+      icon: specializedModule.icon,
+      action: specializedModule.action,
     },
     {
       id: 'payments' as const,
       label: isHindi ? 'पेमेंट वसूली' : 'Payments',
       icon: CreditCard,
+      action: onOpenKhata,
+    },
+    {
+      id: 'expenses' as const,
+      label: isHindi ? 'खर्च व लेजर' : 'Expenses',
+      icon: Wallet,
       action: onOpenKhata,
     },
     {
@@ -148,7 +243,7 @@ export const VyaparSidebar: React.FC<VyaparSidebarProps> = ({
     },
     {
       id: 'settings' as const,
-      label: isHindi ? 'सेटिंग्स व प्रोफाइल' : 'Settings',
+      label: isHindi ? 'व्यापार सेटिंग्स' : 'Business Settings',
       icon: Settings,
       action: onOpenSettings,
     },
@@ -212,51 +307,114 @@ export const VyaparSidebar: React.FC<VyaparSidebarProps> = ({
         </button>
       </div>
 
-      {/* 2. Business Mode Selector Switcher */}
+      {/* 2. DYNAMIC BUSINESS PROFILE & SWITCHER (Completely replacing old Auto 2W / Retail buttons) */}
       {!isCollapsed ? (
-        <div className="p-3 border-b border-slate-800/80 bg-slate-950/40">
-          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1 mb-1.5 flex items-center justify-between">
-            <span>{isHindi ? 'बिजनेस मोड' : 'Business Mode'}</span>
-            <span className="text-[9px] font-mono text-slate-500">
-              {mode === 'auto_dealer' ? '2W/4W/EV' : 'Retail'}
-            </span>
+        <div className="p-3.5 border-b border-slate-800/80 bg-slate-950/60 relative">
+          <div className="flex items-start justify-between gap-2">
+            <div className="space-y-1 overflow-hidden flex-1">
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Business:</span>
+                <span
+                  className="text-xs font-black text-white truncate max-w-[145px]"
+                  title={profile.name || profile.businessName}
+                >
+                  {profile.name || profile.businessName || 'Khan Traders'}
+                </span>
+              </div>
+              <div className="flex items-baseline gap-1.5 text-[11px]">
+                <span className="text-slate-400 text-[10px] font-bold uppercase tracking-wider">Industry:</span>
+                <span className="font-bold text-amber-400 truncate max-w-[145px]" title={currentIndustry}>
+                  {currentIndustry}
+                </span>
+              </div>
+              <div className="flex items-baseline gap-1.5 text-[10px]">
+                <span className="text-slate-400 font-bold uppercase tracking-wider">Business Type:</span>
+                <span className="font-semibold text-slate-300 truncate max-w-[130px]" title={currentBusinessType}>
+                  {currentBusinessType}
+                </span>
+              </div>
+            </div>
+
+            {/* Profile Switcher Trigger */}
+            <div className="shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsSwitcherOpen(!isSwitcherOpen)}
+                className="p-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded-lg border border-slate-700 cursor-pointer transition-colors shadow-2xs flex items-center gap-1"
+                title="Switch Business or Register New"
+              >
+                <Building2 className="w-3.5 h-3.5" />
+                <ChevronsUpDown className="w-3 h-3 text-slate-400" />
+              </button>
+            </div>
           </div>
-          <div className="grid grid-cols-2 gap-1 p-1 bg-slate-800/90 rounded-xl border border-slate-700/60">
-            <button
-              type="button"
-              onClick={() => onModeChange('auto_dealer')}
-              className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                mode === 'auto_dealer'
-                  ? 'bg-amber-400 text-slate-950 shadow-sm'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
-              }`}
-            >
-              <Car className="w-3.5 h-3.5" />
-              <span>{isHindi ? 'डीलरशिप' : 'Auto 2W'}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onModeChange('general_retail')}
-              className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                mode === 'general_retail'
-                  ? 'bg-amber-400 text-slate-950 shadow-sm'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
-              }`}
-            >
-              <Store className="w-3.5 h-3.5" />
-              <span>{isHindi ? 'जनरल' : 'Retail'}</span>
-            </button>
-          </div>
+
+          {/* Business Switcher Dropdown Popover */}
+          {isSwitcherOpen && (
+            <div className="absolute left-2 right-2 top-full mt-1.5 z-40 bg-slate-900 border border-slate-700 rounded-2xl p-2 shadow-2xl space-y-1.5 animate-in fade-in zoom-in-95 duration-150">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-2 py-1 flex items-center justify-between">
+                <span>{isHindi ? 'व्यापार बदलें' : 'Switch Business'}</span>
+                <span className="text-[9px] text-amber-400">{businesses.length} Registered</span>
+              </div>
+
+              <div className="max-h-48 overflow-y-auto space-y-1">
+                {businesses.map((b) => {
+                  const isActive = (b.id && profile.id && b.id === profile.id) || b.name === profile.name;
+                  return (
+                    <button
+                      key={b.id || b.name}
+                      type="button"
+                      onClick={() => {
+                        if (onSelectBusiness && b.id) {
+                          onSelectBusiness(b.id);
+                        }
+                        setIsSwitcherOpen(false);
+                      }}
+                      className={`w-full text-left p-2 rounded-xl text-xs transition-colors flex items-center justify-between cursor-pointer ${
+                        isActive
+                          ? 'bg-amber-400/15 border border-amber-400/40 text-white font-bold'
+                          : 'hover:bg-slate-800 text-slate-300'
+                      }`}
+                    >
+                      <div className="truncate pr-2">
+                        <p className="truncate font-black">{b.name || b.businessName}</p>
+                        <p className="text-[10px] text-slate-400 truncate">
+                          {b.industryCategory || b.industryType || 'Scrap & Recycling'}
+                        </p>
+                      </div>
+                      {isActive && <Check className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {onAddNewBusiness && (
+                <div className="pt-1 border-t border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsSwitcherOpen(false);
+                      onAddNewBusiness();
+                    }}
+                    className="w-full py-1.5 px-2 bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-black rounded-xl flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-2xs"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>{isHindi ? '+ नया व्यापार जोड़ें' : '+ Register New Business'}</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       ) : (
         <div className="p-2 border-b border-slate-800 flex justify-center">
           <button
             type="button"
-            onClick={() => onModeChange(mode === 'auto_dealer' ? 'general_retail' : 'auto_dealer')}
+            onClick={onAddNewBusiness}
             className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 cursor-pointer"
-            title={`Switch to ${mode === 'auto_dealer' ? 'Retail' : 'Auto Showroom'}`}
+            title={`${profile.name || 'Business'} • ${currentIndustry}`}
           >
-            {mode === 'auto_dealer' ? <Car className="w-4 h-4" /> : <Store className="w-4 h-4" />}
+            <Building2 className="w-4 h-4" />
           </button>
         </div>
       )}

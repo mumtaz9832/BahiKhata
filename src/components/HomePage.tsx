@@ -38,12 +38,14 @@ import {
 import { openWhatsAppCustomerReminder } from '../utils/whatsapp';
 import { User } from 'firebase/auth';
 import { BahiKhataLogo } from './BahiKhataLogo';
+import { HomeSalesSummaryChart } from './HomeSalesSummaryChart';
+import { DynamicIndustryDashboard } from './DynamicIndustryDashboard';
 
 interface HomePageProps {
   profile: BusinessProfile;
   invoices: SavedInvoice[];
   subscription: SubscriptionState;
-  mode: AppMode;
+  mode?: AppMode;
   lang: AppLanguage;
   customers: CustomerRecord[];
   products: ProductRecord[];
@@ -58,12 +60,13 @@ interface HomePageProps {
   onNavigateToSales: () => void;
   onNavigateToParties: () => void;
   onNavigateToItems: () => void;
+  onNavigateToReports?: () => void;
   onSelectInvoiceToView: (invoice: SavedInvoice) => void;
   onPrintInvoice: (invoice: SavedInvoice) => void;
   onWhatsAppInvoice: (invoice: SavedInvoice) => void;
   onRecordPayment: (invoiceId: string, amount: number, mode: PaymentMode, note: string) => void;
   onClearAllData?: () => void;
-  onSwitchMode: (mode: AppMode) => void;
+  onSwitchMode?: (mode: AppMode) => void;
 }
 
 export const HomePage: React.FC<HomePageProps> = ({
@@ -85,6 +88,7 @@ export const HomePage: React.FC<HomePageProps> = ({
   onNavigateToSales,
   onNavigateToParties,
   onNavigateToItems,
+  onNavigateToReports,
   onSelectInvoiceToView,
   onPrintInvoice,
   onWhatsAppInvoice,
@@ -547,7 +551,29 @@ export const HomePage: React.FC<HomePageProps> = ({
         </div>
       </div>
 
-      {/* 4. Transactions Ledger (Sale Book Feed) */}
+      {/* 4. Specialized Dynamic Industry Dashboard (Scrap, Construction, Wholesale, Manufacturing, etc.) */}
+      <DynamicIndustryDashboard
+        profile={profile}
+        invoices={invoices}
+        products={products}
+        customers={customers}
+        lang={lang}
+        onNewInvoice={onGenerateBill}
+        onAddProduct={onAddProduct}
+        onAddCustomer={onAddCustomer}
+        onOpenKhata={onOpenKhata}
+      />
+
+      {/* 5. Visual Sales Performance & Top Categories Chart (Recharts) */}
+      <HomeSalesSummaryChart
+        invoices={invoices}
+        products={products}
+        lang={lang}
+        onNavigateToReports={onNavigateToReports}
+        onNavigateToSales={onNavigateToSales}
+      />
+
+      {/* 5. Transactions Ledger (Sale Book Feed) */}
       <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-5 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>

@@ -12,6 +12,8 @@ import { db } from './firebase';
 
 const STORAGE_KEY_INVOICES = 'bahikhata_invoices_v2';
 const STORAGE_KEY_PROFILE = 'bahikhata_business_profile_v2';
+const STORAGE_KEY_BUSINESSES = 'bahikhata_businesses_v3';
+const STORAGE_KEY_ACTIVE_BIZ_ID = 'bahikhata_active_biz_id_v3';
 const STORAGE_KEY_SUBSCRIPTION = 'bahikhata_subscription_v2';
 const STORAGE_KEY_LANGUAGE = 'bahikhata_lang_v2';
 const STORAGE_KEY_CUSTOMERS = 'bahikhata_customers_v2';
@@ -22,26 +24,35 @@ const IDB_VERSION = 1;
 const IDB_STORE = 'keyval_store';
 
 export const DEFAULT_BUSINESS_PROFILE: BusinessProfile = {
+  id: 'biz_default',
   name: 'BahiKhata Business',
   businessName: 'BahiKhata Business',
-  tagline: 'Smart Billing, Digital Khata, GST, Inventory & Business Management',
+  tagline: 'Smart Multi-Industry Billing, Digital Khata & Business Management',
+  industryCategory: 'Scrap & Recycling',
+  industryType: 'Scrap & Recycling',
+  subcategories: ['Iron Scrap', 'Steel Scrap', 'Aluminium Scrap', 'Copper Scrap'],
+  businessModels: ['Wholesale', 'Trader'],
   businessType: 'sales_and_service',
-  industryType: 'Automobile & Electric Vehicles (EV)',
-  salesCategories: ['Electric Vehicle', 'Battery', 'Spare Parts'],
-  serviceCategories: ['EV Repair & Service', 'Battery Repair', 'Vehicle General Service'],
+  salesCategories: ['Iron Scrap', 'Steel Scrap', 'Non-Ferrous Metals'],
+  serviceCategories: ['Processing & Sorting', 'Transportation'],
   address: '',
+  district: '',
   city: '',
-  state: '',
+  state: 'Maharashtra',
   pincode: '',
   country: 'India',
   phone: '',
   altPhone: '',
   email: '',
+  gstRegistrationStatus: 'Unregistered',
   gstRegistered: false,
   gstin: '',
+  gstNumber: '',
+  panNumber: '',
   gstLegalName: '',
   gstState: '',
   dealerCode: '',
+  logoUrl: '',
   documents: [],
   billingType: 'Non-GST',
   gstCalculationMode: 'Exclusive',
@@ -54,21 +65,25 @@ export const DEFAULT_BUSINESS_PROFILE: BusinessProfile = {
   accountHolder: '',
   registrationCompleted: false,
   onboardingCompleted: false,
+  enabledFeatures: [
+    'smart_billing',
+    'digital_khata',
+    'inventory_stock',
+    'scrap_weight_billing',
+    'scrap_grading',
+    'scrap_supplier_mgmt',
+  ],
   activeModules: [
-    'EV Billing',
-    'Vehicle Details',
-    'Chassis Number',
-    'Motor Number',
-    'Battery Number',
-    'Customer Khata',
+    'Billing',
+    'Digital Khata',
     'Inventory',
-    'Job Card',
+    'Scrap Weighbridge',
     'Reports',
   ],
   terms: [
     'Subject to local jurisdiction only.',
     'Delivery will be given only against receipt of 100% realized payment.',
-    'Warranty and statutory terms as applicable by the manufacturer.',
+    'Weight recorded on weighbridge is final and binding.',
     'All statutory taxes and fees are as per government norms.',
   ],
 };
@@ -267,6 +282,10 @@ export function getBusinessProfile(): BusinessProfile {
       const merged: BusinessProfile = {
         ...DEFAULT_BUSINESS_PROFILE,
         ...parsed,
+        id: parsed.id || 'biz_default',
+        industryCategory: parsed.industryCategory || parsed.industryType || 'Scrap & Recycling',
+        subcategories: parsed.subcategories || ['Iron Scrap', 'Steel Scrap', 'Aluminium Scrap'],
+        businessModels: parsed.businessModels || ['Wholesale', 'Trader'],
         businessName: parsed.businessName || parsed.name || DEFAULT_BUSINESS_PROFILE.name,
         registrationCompleted:
           parsed.registrationCompleted !== undefined
@@ -287,11 +306,126 @@ export function getBusinessProfile(): BusinessProfile {
   return DEFAULT_BUSINESS_PROFILE;
 }
 
-export function saveBusinessProfile(profile: BusinessProfile): void {
-  memoryProfile = profile;
+export function getAllBusinesses(): BusinessProfile[] {
   try {
-    localStorage.setItem(STORAGE_KEY_PROFILE, JSON.stringify(profile));
-    idbSet(STORAGE_KEY_PROFILE, profile);
+    const raw = localStorage.getItem(STORAGE_KEY_BUSINESSES);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((b) => ({
+          ...DEFAULT_BUSINESS_PROFILE,
+          ...b,
+          id: b.id || `biz_${Math.random().toString(36).slice(2, 9)}`,
+        }));
+      }
+    }
+  } catch {}
+
+  const single = getBusinessProfile();
+  const initial = [{ ...single, id: single.id || 'biz_default' }];
+  try {
+    localStorage.setItem(STORAGE_KEY_BUSINESSES, JSON.stringify(initial));
+    idbSet(STORAGE_KEY_BUSINESSES, initial);
+  } catch {}
+  return initial;
+}
+
+export function getActiveBusinessId(): string {
+  try {
+    const active = localStorage.getItem(STORAGE_KEY_ACTIVE_BIZ_ID);
+    if (active) return active;
+  } catch {}
+  const all = getAllBusinesses();
+  const firstId = all[0]?.id || 'biz_default';
+  try {
+    localStorage.setItem(STORAGE_KEY_ACTIVE_BIZ_ID, firstId);
+  } catch {}
+  return firstId;
+}
+
+export function setActiveBusinessId(id: string): BusinessProfile {
+  try {
+    localStorage.setItem(STORAGE_KEY_ACTIVE_BIZ_ID, id);
+  } catch {}
+  const all = getAllBusinesses();
+  const target = all.find((b) => b.id === id) || all[0] || DEFAULT_BUSINESS_PROFILE;
+  saveBusinessProfile(target);
+  return target;
+}
+
+export function saveBusiness(business: BusinessProfile): BusinessProfile[] {
+  const all = getAllBusinesses();
+  const bizId = business.id || `biz_${Date.now()}`;
+  const prepared: BusinessProfile = {
+    ...business,
+    id: bizId,
+    updatedAt: new Date().toISOString(),
+  };
+
+  const index = all.findIndex((b) => b.id === bizId);
+  let updated: BusinessProfile[];
+  if (index >= 0) {
+    updated = [...all];
+    updated[index] = prepared;
+  } else {
+    updated = [...all, prepared];
+  }
+
+  try {
+    localStorage.setItem(STORAGE_KEY_BUSINESSES, JSON.stringify(updated));
+    idbSet(STORAGE_KEY_BUSINESSES, updated);
+  } catch (err) {
+    console.error('Error saving businesses list:', err);
+  }
+
+  // If this is the active business, update the active profile cache
+  const activeId = getActiveBusinessId();
+  if (activeId === bizId || all.length === 0) {
+    saveBusinessProfile(prepared);
+  }
+
+  return updated;
+}
+
+export function deleteBusiness(id: string): BusinessProfile[] {
+  const all = getAllBusinesses();
+  if (all.length <= 1) {
+    return all; // Do not delete the last business
+  }
+  const updated = all.filter((b) => b.id !== id);
+  try {
+    localStorage.setItem(STORAGE_KEY_BUSINESSES, JSON.stringify(updated));
+    idbSet(STORAGE_KEY_BUSINESSES, updated);
+  } catch {}
+
+  const activeId = getActiveBusinessId();
+  if (activeId === id) {
+    setActiveBusinessId(updated[0].id || 'biz_default');
+  }
+
+  return updated;
+}
+
+export function saveBusinessProfile(profile: BusinessProfile): void {
+  const bizId = profile.id || getActiveBusinessId();
+  const prepared = { ...profile, id: bizId };
+  memoryProfile = prepared;
+  try {
+    localStorage.setItem(STORAGE_KEY_PROFILE, JSON.stringify(prepared));
+    idbSet(STORAGE_KEY_PROFILE, prepared);
+
+    // Keep businesses list in sync
+    const all = getAllBusinesses();
+    const idx = all.findIndex((b) => b.id === bizId);
+    let updated: BusinessProfile[];
+    if (idx >= 0) {
+      updated = [...all];
+      updated[idx] = prepared;
+    } else {
+      updated = [...all, prepared];
+    }
+    localStorage.setItem(STORAGE_KEY_BUSINESSES, JSON.stringify(updated));
+    idbSet(STORAGE_KEY_BUSINESSES, updated);
   } catch (err) {
     console.error('Error saving business profile:', err);
   }
@@ -357,47 +491,58 @@ export async function loadProfileFromFirestore(
   return null;
 }
 
-export function getSavedInvoices(): SavedInvoice[] {
-  if (memoryInvoices) return memoryInvoices;
-
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY_INVOICES);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        // Strip out any false demo invoices
-        const cleaned = parsed.filter(
-          (inv) =>
-            !inv.id.startsWith('inv_demo_') &&
-            inv.invoiceNo !== 'APX-2026-0042' &&
-            inv.invoiceNo !== 'APX-2026-0041' &&
-            inv.autoData?.buyer.fullName !== 'Rahul Sharma' &&
-            inv.autoData?.buyer.fullName !== 'Vikram Joshi'
-        );
-        memoryInvoices = cleaned;
-        if (cleaned.length !== parsed.length) {
-          localStorage.setItem(STORAGE_KEY_INVOICES, JSON.stringify(cleaned));
-          idbSet(STORAGE_KEY_INVOICES, cleaned);
+export function getSavedInvoices(businessId?: string): SavedInvoice[] {
+  let all: SavedInvoice[] = [];
+  if (memoryInvoices) {
+    all = memoryInvoices;
+  } else {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_INVOICES);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          const cleaned = parsed.filter(
+            (inv) =>
+              !inv.id.startsWith('inv_demo_') &&
+              inv.invoiceNo !== 'APX-2026-0042' &&
+              inv.invoiceNo !== 'APX-2026-0041' &&
+              inv.autoData?.buyer.fullName !== 'Rahul Sharma' &&
+              inv.autoData?.buyer.fullName !== 'Vikram Joshi'
+          );
+          memoryInvoices = cleaned;
+          all = cleaned;
+          if (cleaned.length !== parsed.length) {
+            localStorage.setItem(STORAGE_KEY_INVOICES, JSON.stringify(cleaned));
+            idbSet(STORAGE_KEY_INVOICES, cleaned);
+          }
         }
-        return cleaned;
       }
-    }
-  } catch {}
+    } catch {}
+  }
 
-  memoryInvoices = [];
-  return [];
+  if (!businessId) return all;
+  return all.filter(
+    (inv) => inv.businessId === businessId || (!inv.businessId && businessId === 'biz_default')
+  );
 }
 
 export function saveInvoice(invoice: SavedInvoice): SavedInvoice[] {
   try {
+    const activeBizId = invoice.businessId || getActiveBusinessId();
+    const prepared: SavedInvoice = {
+      ...invoice,
+      businessId: activeBizId,
+      updatedAt: new Date().toISOString(),
+    };
+
     const all = getSavedInvoices();
-    const index = all.findIndex((item) => item.id === invoice.id);
+    const index = all.findIndex((item) => item.id === prepared.id);
     let updated: SavedInvoice[];
     if (index >= 0) {
       updated = [...all];
-      updated[index] = { ...invoice, updatedAt: new Date().toISOString() };
+      updated[index] = prepared;
     } else {
-      updated = [invoice, ...all];
+      updated = [prepared, ...all];
     }
     memoryInvoices = updated;
     localStorage.setItem(STORAGE_KEY_INVOICES, JSON.stringify(updated));
@@ -446,7 +591,7 @@ export function recordInvoicePayment(
       newBalance = Math.max(0, payable - newAdvance);
       target.autoData.pricing.advanceReceived = newAdvance;
       target.autoData.pricing.balanceAmount = newBalance;
-    } else if (target.mode === 'general_retail' && target.retailData) {
+    } else if (target.retailData) {
       newAdvance = (target.retailData.advanceReceived || 0) + payment.amount;
       newBalance = Math.max(0, target.retailData.grandTotal - newAdvance);
       target.retailData.advanceReceived = newAdvance;
@@ -472,45 +617,55 @@ export function generateNextInvoiceNo(): string {
   return `INV-${year}-${String(count).padStart(4, '0')}`;
 }
 
-export function getSavedCustomers(): CustomerRecord[] {
-  if (memoryCustomers) return memoryCustomers;
-
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY_CUSTOMERS);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        // Strip out false demo customers
-        const cleaned = parsed.filter(
-          (c) =>
-            !c.id.startsWith('cust_00') &&
-            c.fullName !== 'Rahul Sharma' &&
-            c.fullName !== 'Vikram Joshi'
-        );
-        memoryCustomers = cleaned;
-        if (cleaned.length !== parsed.length) {
-          localStorage.setItem(STORAGE_KEY_CUSTOMERS, JSON.stringify(cleaned));
-          idbSet(STORAGE_KEY_CUSTOMERS, cleaned);
+export function getSavedCustomers(businessId?: string): CustomerRecord[] {
+  let all: CustomerRecord[] = [];
+  if (memoryCustomers) {
+    all = memoryCustomers;
+  } else {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_CUSTOMERS);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          const cleaned = parsed.filter(
+            (c) =>
+              !c.id.startsWith('cust_00') &&
+              c.fullName !== 'Rahul Sharma' &&
+              c.fullName !== 'Vikram Joshi'
+          );
+          memoryCustomers = cleaned;
+          all = cleaned;
+          if (cleaned.length !== parsed.length) {
+            localStorage.setItem(STORAGE_KEY_CUSTOMERS, JSON.stringify(cleaned));
+            idbSet(STORAGE_KEY_CUSTOMERS, cleaned);
+          }
         }
-        return cleaned;
       }
-    }
-  } catch {}
+    } catch {}
+  }
 
-  memoryCustomers = [];
-  return [];
+  if (!businessId) return all;
+  return all.filter(
+    (c) => c.businessId === businessId || (!c.businessId && businessId === 'biz_default')
+  );
 }
 
 export function saveCustomer(customer: CustomerRecord): CustomerRecord[] {
   try {
+    const activeBizId = customer.businessId || getActiveBusinessId();
+    const prepared: CustomerRecord = {
+      ...customer,
+      businessId: activeBizId,
+    };
+
     const all = getSavedCustomers();
-    const index = all.findIndex((c) => c.id === customer.id);
+    const index = all.findIndex((c) => c.id === prepared.id);
     let updated: CustomerRecord[];
     if (index >= 0) {
       updated = [...all];
-      updated[index] = customer;
+      updated[index] = prepared;
     } else {
-      updated = [customer, ...all];
+      updated = [prepared, ...all];
     }
     memoryCustomers = updated;
     localStorage.setItem(STORAGE_KEY_CUSTOMERS, JSON.stringify(updated));
@@ -536,45 +691,55 @@ export function deleteCustomer(id: string): CustomerRecord[] {
   }
 }
 
-export function getSavedProducts(): ProductRecord[] {
-  if (memoryProducts) return memoryProducts;
-
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY_PRODUCTS);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        // Strip out false demo products
-        const cleaned = parsed.filter(
-          (p) =>
-            !p.id.startsWith('prod_00') &&
-            !p.name.includes('Ola S1 Pro Gen 2') &&
-            !p.name.includes('Splendor Plus')
-        );
-        memoryProducts = cleaned;
-        if (cleaned.length !== parsed.length) {
-          localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(cleaned));
-          idbSet(STORAGE_KEY_PRODUCTS, cleaned);
+export function getSavedProducts(businessId?: string): ProductRecord[] {
+  let all: ProductRecord[] = [];
+  if (memoryProducts) {
+    all = memoryProducts;
+  } else {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_PRODUCTS);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          const cleaned = parsed.filter(
+            (p) =>
+              !p.id.startsWith('prod_00') &&
+              !p.name.includes('Ola S1 Pro Gen 2') &&
+              !p.name.includes('Splendor Plus')
+          );
+          memoryProducts = cleaned;
+          all = cleaned;
+          if (cleaned.length !== parsed.length) {
+            localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(cleaned));
+            idbSet(STORAGE_KEY_PRODUCTS, cleaned);
+          }
         }
-        return cleaned;
       }
-    }
-  } catch {}
+    } catch {}
+  }
 
-  memoryProducts = [];
-  return [];
+  if (!businessId) return all;
+  return all.filter(
+    (p) => p.businessId === businessId || (!p.businessId && businessId === 'biz_default')
+  );
 }
 
 export function saveProduct(product: ProductRecord): ProductRecord[] {
   try {
+    const activeBizId = product.businessId || getActiveBusinessId();
+    const prepared: ProductRecord = {
+      ...product,
+      businessId: activeBizId,
+    };
+
     const all = getSavedProducts();
-    const index = all.findIndex((p) => p.id === product.id);
+    const index = all.findIndex((p) => p.id === prepared.id);
     let updated: ProductRecord[];
     if (index >= 0) {
       updated = [...all];
-      updated[index] = product;
+      updated[index] = prepared;
     } else {
-      updated = [product, ...all];
+      updated = [prepared, ...all];
     }
     memoryProducts = updated;
     localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(updated));

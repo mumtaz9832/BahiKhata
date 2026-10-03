@@ -40,34 +40,46 @@ export interface BusinessDocument {
 
 export interface BusinessProfile {
   // Core & Identification
+  id?: string; // Unique business identifier
   userId?: string;
-  fullName?: string;
+  fullName?: string; // Owner name
   email: string;
   phone: string;
   altPhone?: string;
 
-  // Trading details
+  // Trading & Multi-Industry details
   name: string; // Business/Shop name
   businessName?: string; // Explicit alias for registration form
   tagline: string;
-  businessType?: BusinessType;
-  industryType?: string;
+  industryCategory?: string; // e.g., 'Scrap & Recycling', 'Construction & Building', etc.
+  industryType?: string; // backward compat
+  subcategories?: string[]; // Dynamic subcategories selected
+  businessModels?: string[]; // e.g. ['Wholesale', 'Recycler', 'Trader']
+  customSubcategories?: string[];
+  businessType?: BusinessType; // backward compat
   salesCategories?: string[];
   serviceCategories?: string[];
 
   // Location
   address: string;
+  district?: string;
   city: string;
   state: string;
   pincode: string;
   country?: string;
 
   // Tax & Legal
+  gstRegistrationStatus?: 'Registered' | 'Unregistered' | 'Composition';
   gstRegistered?: boolean;
   gstin?: string;
+  gstNumber?: string;
+  panNumber?: string;
   gstLegalName?: string;
   gstState?: string;
   dealerCode?: string;
+
+  // Branding & Media
+  logoUrl?: string;
 
   // Documents
   documents?: BusinessDocument[];
@@ -84,19 +96,18 @@ export interface BusinessProfile {
   accountNumber: string;
   ifscCode: string;
   accountHolder: string;
-  logoUrl?: string;
   terms: string[];
 
   // Registration & Verification fields
   mobileNumber?: string;
   businessAddress?: string;
-  gstNumber?: string;
   mobileVerified?: boolean;
   emailVerified?: boolean;
 
-  // Onboarding & Module states
+  // Onboarding & Feature states
   registrationCompleted?: boolean;
   onboardingCompleted?: boolean;
+  enabledFeatures?: string[];
   activeModules?: string[];
   authMethod?: 'google' | 'email_mobile';
   createdAt?: string;
@@ -219,6 +230,7 @@ export interface PaymentRecord {
 
 export interface SavedInvoice {
   id: string;
+  businessId?: string; // Multi-business data isolation
   invoiceNo: string;
   invoiceDate: string;
   deliveryDate: string;
@@ -237,6 +249,7 @@ export type AppView = 'home' | 'generate_bill' | 'sales' | 'parties' | 'items' |
 
 export interface CustomerRecord {
   id: string;
+  businessId?: string; // Multi-business data isolation
   fullName: string;
   phone: string;
   altPhone?: string;
@@ -256,19 +269,41 @@ export interface CustomerRecord {
 
 export interface ProductRecord {
   id: string;
+  businessId?: string; // Multi-business data isolation
+  type?: 'product' | 'service'; // Product or Service distinction
   name: string;
-  category: 'two_wheeler' | 'four_wheeler' | 'electric_vehicle' | 'commercial' | 'spare_parts' | 'goods' | 'service';
+  category: 'two_wheeler' | 'four_wheeler' | 'electric_vehicle' | 'commercial' | 'spare_parts' | 'goods' | 'service' | string;
+  industryCategory?: string;
+  subcategory?: string;
+  sku?: string;
+  barcode?: string;
   make?: string;
   model?: string;
   variant?: string;
   hsn: string;
-  rate: number;
+  rate: number; // Selling Price
   purchasePrice?: number;
+  wholesalePrice?: number;
+  retailPrice?: number;
   gstPercent: number;
   unit: string;
   stockQty?: number;
   minStockAlert?: number;
+  supplier?: string;
+  warranty?: string;
+  serialNumber?: string;
+  batchNumber?: string;
+  expiryDate?: string;
   description?: string;
+
+  // Specific to Service items
+  serviceCode?: string;
+  labourCharge?: number;
+  partsRequired?: string;
+  serviceDuration?: string;
+  assignedTechnician?: string;
+  serviceWarranty?: string;
+
   createdAt: string;
 }
 
