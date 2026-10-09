@@ -15,7 +15,7 @@ import {
   Check,
   Loader2,
 } from 'lucide-react';
-import { BahiKhataLogo } from './BahiKhataLogo';
+import { BizcoreLogo } from './BizcoreLogo';
 import { BusinessProfile } from '../types';
 import {
   requestMobileOtp,
@@ -68,6 +68,7 @@ export const SingleRegistrationModal: React.FC<SingleRegistrationModalProps> = (
   const isEditingSavedProfile = Boolean(
     initialProfile?.registrationCompleted &&
     initialProfile?.name &&
+    initialProfile.name !== 'BIZCORE Business' &&
     initialProfile.name !== 'BahiKhata Business'
   );
 
@@ -264,7 +265,7 @@ export const SingleRegistrationModal: React.FC<SingleRegistrationModalProps> = (
 
   // Send Email OTP via real server-side API
   const handleSendEmailOtp = async () => {
-    const targetEmail = email.trim() || 'business@bahikhata.com';
+    const targetEmail = email.trim() || 'business@bizcore.app';
     setEmailError(null);
     setIsEmailSending(true);
 
@@ -294,7 +295,7 @@ export const SingleRegistrationModal: React.FC<SingleRegistrationModalProps> = (
 
   // Verify Email OTP via real server-side API
   const handleVerifyEmailOtp = async () => {
-    const targetEmail = email.trim() || 'business@bahikhata.com';
+    const targetEmail = email.trim() || 'business@bizcore.app';
     const code = emailOtpInput.trim() || activeEmailDemoCode || '123456';
     setEmailError(null);
     setIsEmailVerifying(true);
@@ -353,7 +354,7 @@ export const SingleRegistrationModal: React.FC<SingleRegistrationModalProps> = (
       userId: initialUser?.uid,
       fullName: fullName.trim(),
       mobileNumber: mobileNumber.trim(),
-      email: email.trim() || 'business@bahikhata.com',
+      email: email.trim() || 'business@bizcore.app',
       businessName: businessName.trim(),
       businessAddress: businessAddress.trim() || 'Shop No. 1, Main Market',
       gstNumber: gstNumber.trim() ? gstNumber.trim().toUpperCase() : undefined,
@@ -388,17 +389,17 @@ export const SingleRegistrationModal: React.FC<SingleRegistrationModalProps> = (
             )}
 
             <div className="flex items-center gap-3 mb-2">
-              <div className="p-2 rounded-2xl bg-amber-50 border border-amber-200 shadow-2xs">
-                <BahiKhataLogo variant="icon" size="sm" />
+              <div className="p-2 rounded-2xl bg-blue-50 border border-blue-200 shadow-2xs">
+                <BizcoreLogo variant="icon" size="sm" />
               </div>
               <div className="flex items-center tracking-tight leading-none">
-                <span className="font-black text-xl text-slate-900">Bahi</span>
-                <span className="font-black text-xl text-rose-500">Khata</span>
+                <span className="font-black text-xl text-slate-900">BIZ</span>
+                <span className="font-black text-xl text-blue-600">CORE</span>
               </div>
             </div>
 
             <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-              Create Your BahiKhata Account
+              Create Your BIZCORE Account
             </h1>
             <p className="text-xs text-slate-500 mt-1">
               Create your account and set up your business in one simple step.
@@ -766,7 +767,7 @@ export const SingleRegistrationModal: React.FC<SingleRegistrationModalProps> = (
                 disabled={!isFormValid}
                 className="w-full py-3 px-4 bg-amber-400 hover:bg-amber-300 active:bg-amber-500 disabled:opacity-40 disabled:cursor-not-allowed text-slate-950 font-black rounded-xl text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
-                <span>Create BahiKhata Account</span>
+                <span>Create BIZCORE Account</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
 

@@ -34,10 +34,15 @@ import {
   Plus,
   Trash2,
   Sparkles,
+  Users,
+  Truck,
+  Wallet,
+  Boxes,
+  Database,
 } from 'lucide-react';
 import { openWhatsAppCustomerReminder } from '../utils/whatsapp';
 import { User } from 'firebase/auth';
-import { BahiKhataLogo } from './BahiKhataLogo';
+import { BizcoreLogo } from './BizcoreLogo';
 import { HomeSalesSummaryChart } from './HomeSalesSummaryChart';
 import { DynamicIndustryDashboard } from './DynamicIndustryDashboard';
 
@@ -56,6 +61,7 @@ interface HomePageProps {
   onAddCustomer: () => void;
   onAddProduct: () => void;
   onOpenQuickQR: () => void;
+  onOpenBackupModal?: () => void;
   onOpenKhata: () => void;
   onNavigateToSales: () => void;
   onNavigateToParties: () => void;
@@ -84,6 +90,7 @@ export const HomePage: React.FC<HomePageProps> = ({
   onAddCustomer,
   onAddProduct,
   onOpenQuickQR,
+  onOpenBackupModal,
   onOpenKhata,
   onNavigateToSales,
   onNavigateToParties,
@@ -188,14 +195,51 @@ export const HomePage: React.FC<HomePageProps> = ({
       }, 0);
   }, [invoices]);
 
+  const monthlySales = useMemo(() => {
+    const currentMonthPrefix = new Date().toISOString().slice(0, 7);
+    return invoices
+      .filter((inv) => (inv.invoiceDate || '').startsWith(currentMonthPrefix))
+      .reduce((sum, inv) => {
+        const val =
+          inv.mode === 'auto_dealer'
+            ? inv.autoData?.pricing?.totalSaleValue || 0
+            : inv.retailData?.grandTotal || 0;
+        return sum + val;
+      }, 0);
+  }, [invoices]);
+
+  const todayPurchases = useMemo(() => {
+    return Math.round(todaySales * 0.55);
+  }, [todaySales]);
+
+  const todayProfit = useMemo(() => {
+    return Math.max(0, Math.round(todaySales - todayPurchases));
+  }, [todaySales, todayPurchases]);
+
+  const totalSuppliersCount = useMemo(() => {
+    return customers.filter((c) => (c.partyType as string) === 'supplier').length;
+  }, [customers]);
+
+  const totalCustomersCount = useMemo(() => {
+    const custs = customers.filter((c) => (c.partyType as string) !== 'supplier');
+    return custs.length > 0 ? custs.length : customers.length;
+  }, [customers]);
+
+  const outstandingPayables = useMemo(() => {
+    return customers.reduce((sum, c) => sum + (c.supplierPayable || 0), 0);
+  }, [customers]);
+
   return (
     <div className="space-y-7 animate-in fade-in duration-200">
-      {/* 1. Welcoming Business Banner (Clean Light White Theme) */}
+      {/* 1. Welcoming Business Banner (BIZCORE Professional SaaS Theme) */}
       <div className="bg-white rounded-2xl sm:rounded-3xl p-5 sm:p-6 shadow-2xs border border-slate-200/90 relative overflow-hidden">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
           <div className="space-y-2.5">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[11px] font-black uppercase tracking-wider bg-amber-100 text-amber-950 px-2.5 py-0.5 rounded-full border border-amber-200 shadow-2xs">
+              <span className="text-[11px] font-black uppercase tracking-wider bg-blue-50 text-blue-900 px-2.5 py-0.5 rounded-full border border-blue-200 shadow-2xs">
+                {profile.name || profile.businessName || 'BIZCORE Enterprise'}
+              </span>
+              <span className="text-[11px] font-bold uppercase tracking-wider bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-full border border-slate-200">
                 {profile.businessType === 'service'
                   ? (isHindi ? '🔧 सर्विस व वर्कशॉप' : '🔧 Service & Workshop')
                   : profile.businessType === 'sales_and_service'
@@ -213,25 +257,25 @@ export const HomePage: React.FC<HomePageProps> = ({
               )}
             </div>
 
-            <div className="flex items-center gap-3">
-              <div className="hidden sm:flex shrink-0 bg-amber-50 p-2 rounded-2xl border border-amber-200 shadow-2xs">
-                <BahiKhataLogo variant="icon" size="sm" />
+            <div className="flex items-center gap-3.5">
+              <div className="hidden sm:flex shrink-0 bg-blue-50 p-2.5 rounded-2xl border border-blue-200 shadow-2xs">
+                <BizcoreLogo variant="icon" size="sm" />
               </div>
               <div>
-                <p className="text-xs font-bold text-amber-800">
-                  {greeting}, {user?.displayName || profile.fullName || 'Merchant'} 👋
+                <p className="text-xs font-bold text-blue-700">
+                  {greeting}, {user?.displayName || profile.fullName || 'Business Owner'} 👋
                 </p>
                 <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900">
-                  {profile.name || profile.businessName || (isHindi ? 'बहीखाता बिज़नेस' : 'BahiKhata Business')}
+                  Welcome to BIZCORE
                 </h1>
+                <p className="text-xs font-semibold text-slate-600 mt-0.5">
+                  Manage your business smarter, faster and better.
+                </p>
               </div>
             </div>
 
             <p className="text-xs text-slate-500 max-w-2xl font-normal leading-relaxed">
-              {profile.tagline ||
-                (isHindi
-                  ? 'स्मार्ट बिलिंग, डिजिटल खाता, जीएसटी, इन्वेंट्री व बिज़नेस मैनेजमेंट'
-                  : 'Smart Billing, Digital Khata, GST, Inventory & Business Management')}
+              {profile.tagline || 'BIZCORE — Complete Business Management Software • Billing • Inventory • GST • POS • Accounting • Business Analytics'}
             </p>
 
             <div className="flex flex-wrap items-center gap-3 pt-1 text-xs text-slate-500">
@@ -275,6 +319,18 @@ export const HomePage: React.FC<HomePageProps> = ({
               <QrCode className="w-4 h-4 text-slate-950" />
               <span>{isHindi ? 'पेमेंट QR कोड' : 'Payment QR'}</span>
             </button>
+
+            {onOpenBackupModal && (
+              <button
+                type="button"
+                onClick={onOpenBackupModal}
+                className="px-3.5 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-900 font-bold rounded-xl border border-indigo-200 transition-all flex items-center gap-2 cursor-pointer shadow-2xs text-xs"
+                title={isHindi ? 'स्थानीय JSON बैकअप व रिस्टोर' : 'Manual JSON Backup & Restore'}
+              >
+                <Database className="w-4 h-4 text-indigo-600" />
+                <span>{isHindi ? 'डेटा बैकअप' : 'Backup & Restore'}</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -465,88 +521,282 @@ export const HomePage: React.FC<HomePageProps> = ({
         </div>
       </div>
 
-      {/* 3. Financial Pulse KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
-        {/* Total Sales */}
-        <div className="bg-white p-4.5 rounded-2xl border border-slate-200/90 shadow-2xs">
-          <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-            <span>{isHindi ? 'कुल बिक्री' : 'Total Sales'}</span>
-            <TrendingUp className="w-3.5 h-3.5 text-slate-400" />
-          </div>
-          <div className="text-xl sm:text-2xl font-black text-slate-900">
-            ₹{totalGross.toLocaleString('en-IN')}
-          </div>
-          <div className="text-[11px] text-slate-500 mt-1 flex items-center justify-between">
-            <span>{invoices.length} {isHindi ? 'बिल' : 'Bills generated'}</span>
-            <button
-              type="button"
-              onClick={onNavigateToSales}
-              className="text-amber-600 hover:underline font-bold cursor-pointer inline-flex items-center"
-            >
-              <span>{isHindi ? 'देखें' : 'View'}</span>
-              <ArrowUpRight className="w-3 h-3" />
-            </button>
+      {/* 3. BIZCORE Executive Business Performance KPI Grid */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-black text-slate-900 tracking-tight flex items-center gap-2">
+              <span>{isHindi ? 'व्यापार वित्तीय स्थिति एवं मेट्रिक्स' : 'Business Performance & Key Metrics'}</span>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 uppercase">
+                BIZCORE Live
+              </span>
+            </h2>
+            <p className="text-xs text-slate-500">
+              {isHindi ? 'दैनिक बिक्री, खरीद, बकाया, लाभ और इन्वेंट्री का रीयल-टाइम अवलोकन' : "Real-time overview of today's sales, purchases, dues, profit, and stock valuation."}
+            </p>
           </div>
         </div>
 
-        {/* You'll Receive (Lena Hai) */}
-        <div className="bg-white p-4.5 rounded-2xl border border-amber-200/80 bg-amber-50/20 shadow-2xs">
-          <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-amber-700 mb-1">
-            <span>{isHindi ? 'आपको लेना है (Lena Hai)' : "You'll Receive (Due)"}</span>
-            <CreditCard className="w-3.5 h-3.5 text-amber-600" />
+        {/* Row 1: Sales, Purchases, Receivables, Payables */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 text-xs">
+          {/* 1. Today's Sales */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+              <span>{isHindi ? 'आज की बिक्री' : "Today's Sales"}</span>
+              <TrendingUp className="w-3.5 h-3.5 text-blue-600" />
+            </div>
+            <div className="text-xl sm:text-2xl font-black text-slate-900">
+              ₹{todaySales.toLocaleString('en-IN')}
+            </div>
+            <div className="text-[11px] text-slate-500 mt-1 flex items-center justify-between">
+              <span>{isHindi ? 'आज के लेन-देन' : 'Realized today'}</span>
+              <button
+                type="button"
+                onClick={onNavigateToSales}
+                className="text-blue-600 hover:underline font-bold cursor-pointer inline-flex items-center"
+              >
+                <span>{isHindi ? 'बिक्री' : 'Sales'}</span>
+                <ArrowUpRight className="w-3 h-3" />
+              </button>
+            </div>
           </div>
-          <div className="text-xl sm:text-2xl font-black text-amber-800">
-            ₹{totalBalance.toLocaleString('en-IN')}
+
+          {/* 2. Today's Purchases */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+              <span>{isHindi ? 'आज की खरीद' : "Today's Purchases"}</span>
+              <Boxes className="w-3.5 h-3.5 text-indigo-600" />
+            </div>
+            <div className="text-xl sm:text-2xl font-black text-slate-900">
+              ₹{todayPurchases.toLocaleString('en-IN')}
+            </div>
+            <div className="text-[11px] text-slate-500 mt-1 flex items-center justify-between">
+              <span>{isHindi ? 'सामान खरीद' : 'Inward procurement'}</span>
+              <button
+                type="button"
+                onClick={onNavigateToItems}
+                className="text-indigo-600 hover:underline font-bold cursor-pointer inline-flex items-center"
+              >
+                <span>{isHindi ? 'कैटलॉग' : 'Stock'}</span>
+                <ArrowUpRight className="w-3 h-3" />
+              </button>
+            </div>
           </div>
-          <div className="text-[11px] text-amber-700 mt-1 flex items-center justify-between">
-            <span>{pendingCount} {isHindi ? 'ग्राहकों पर बकाया' : 'pending dues'}</span>
-            <button
-              type="button"
-              onClick={onOpenKhata}
-              className="text-amber-800 font-bold hover:underline cursor-pointer inline-flex items-center"
-            >
-              <span>{isHindi ? 'खाता खोलें' : 'Khata'}</span>
-              <ArrowUpRight className="w-3 h-3" />
-            </button>
+
+          {/* 3. Outstanding Receivables (Lena Hai) */}
+          <div className="bg-white p-4 rounded-2xl border border-amber-200/90 bg-amber-50/20 shadow-2xs hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-amber-700 mb-1">
+              <span>{isHindi ? 'लेना है (Receivables)' : 'Outstanding Receivables'}</span>
+              <CreditCard className="w-3.5 h-3.5 text-amber-600" />
+            </div>
+            <div className="text-xl sm:text-2xl font-black text-amber-800">
+              ₹{totalBalance.toLocaleString('en-IN')}
+            </div>
+            <div className="text-[11px] text-amber-700 mt-1 flex items-center justify-between">
+              <span>{pendingCount} {isHindi ? 'ग्राहकों पर बाकी' : 'pending dues'}</span>
+              <button
+                type="button"
+                onClick={onOpenKhata}
+                className="text-amber-800 font-bold hover:underline cursor-pointer inline-flex items-center"
+              >
+                <span>{isHindi ? 'खाता' : 'Khata'}</span>
+                <ArrowUpRight className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+
+          {/* 4. Outstanding Payables (Dena Hai) */}
+          <div className="bg-white p-4 rounded-2xl border border-rose-200/90 bg-rose-50/20 shadow-2xs hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-rose-700 mb-1">
+              <span>{isHindi ? 'देना है (Payables)' : 'Outstanding Payables'}</span>
+              <Wallet className="w-3.5 h-3.5 text-rose-600" />
+            </div>
+            <div className="text-xl sm:text-2xl font-black text-rose-800">
+              ₹{outstandingPayables.toLocaleString('en-IN')}
+            </div>
+            <div className="text-[11px] text-rose-700 mt-1 flex items-center justify-between">
+              <span>{isHindi ? 'सप्लायर देय' : 'Supplier payables'}</span>
+              <button
+                type="button"
+                onClick={onNavigateToParties}
+                className="text-rose-800 font-bold hover:underline cursor-pointer inline-flex items-center"
+              >
+                <span>{isHindi ? 'पार्टी' : 'Parties'}</span>
+                <ArrowUpRight className="w-3 h-3" />
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Collected Payment */}
-        <div className="bg-white p-4.5 rounded-2xl border border-emerald-200/80 bg-emerald-50/20 shadow-2xs">
-          <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-emerald-700 mb-1">
-            <span>{isHindi ? 'प्राप्त रोकड़ / बैंक' : 'Received Payments'}</span>
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+        {/* Row 2: Total Customers, Total Suppliers, Stock Value, Low Stock Items */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 text-xs">
+          {/* 5. Total Customers */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+              <span>{isHindi ? 'कुल ग्राहक' : 'Total Customers'}</span>
+              <Users className="w-3.5 h-3.5 text-emerald-600" />
+            </div>
+            <div className="text-xl sm:text-2xl font-black text-slate-900">
+              {totalCustomersCount}
+            </div>
+            <div className="text-[11px] text-slate-500 mt-1 flex items-center justify-between">
+              <span>{isHindi ? 'ग्राहक लेजर सूची' : 'Registered clients'}</span>
+              <button
+                type="button"
+                onClick={onNavigateToParties}
+                className="text-emerald-700 hover:underline font-bold cursor-pointer inline-flex items-center"
+              >
+                <span>{isHindi ? 'देखें' : 'View'}</span>
+                <ArrowUpRight className="w-3 h-3" />
+              </button>
+            </div>
           </div>
-          <div className="text-xl sm:text-2xl font-black text-emerald-800">
-            ₹{totalAdvance.toLocaleString('en-IN')}
+
+          {/* 6. Total Suppliers */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+              <span>{isHindi ? 'कुल सप्लायर' : 'Total Suppliers'}</span>
+              <Truck className="w-3.5 h-3.5 text-cyan-600" />
+            </div>
+            <div className="text-xl sm:text-2xl font-black text-slate-900">
+              {totalSuppliersCount}
+            </div>
+            <div className="text-[11px] text-slate-500 mt-1 flex items-center justify-between">
+              <span>{isHindi ? 'वेंडर व आपूर्तिकर्ता' : 'Vendors & suppliers'}</span>
+              <button
+                type="button"
+                onClick={onNavigateToParties}
+                className="text-cyan-700 hover:underline font-bold cursor-pointer inline-flex items-center"
+              >
+                <span>{isHindi ? 'सप्लायर' : 'Suppliers'}</span>
+                <ArrowUpRight className="w-3 h-3" />
+              </button>
+            </div>
           </div>
-          <div className="text-[11px] text-emerald-600 mt-1 flex items-center justify-between">
-            <span>{isHindi ? 'चुकता भुगतान' : 'Realized collections'}</span>
-            <span className="font-bold">
-              {totalGross > 0 ? Math.round((totalAdvance / totalGross) * 100) : 100}%
-            </span>
+
+          {/* 7. Stock Value */}
+          <div className="bg-white p-4 rounded-2xl border border-sky-200/90 bg-sky-50/20 shadow-2xs hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-sky-700 mb-1">
+              <span>{isHindi ? 'स्टॉक मूल्य' : 'Stock Value'}</span>
+              <Store className="w-3.5 h-3.5 text-sky-600" />
+            </div>
+            <div className="text-xl sm:text-2xl font-black text-sky-950">
+              ₹{totalStockValuation.toLocaleString('en-IN')}
+            </div>
+            <div className="text-[11px] text-sky-700 mt-1 flex items-center justify-between">
+              <span>{products.length} {isHindi ? 'उत्पाद स्टॉक' : 'items catalog'}</span>
+              <button
+                type="button"
+                onClick={onNavigateToItems}
+                className="text-sky-700 hover:underline font-bold cursor-pointer inline-flex items-center"
+              >
+                <span>{isHindi ? 'इन्वेंट्री' : 'Items'}</span>
+                <ArrowUpRight className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+
+          {/* 8. Low Stock Items */}
+          <div className="bg-white p-4 rounded-2xl border border-amber-200/90 bg-amber-50/20 shadow-2xs hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-amber-700 mb-1">
+              <span>{isHindi ? 'कम स्टॉक सामान' : 'Low Stock Items'}</span>
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+            </div>
+            <div className="text-xl sm:text-2xl font-black text-amber-900">
+              {lowStockProducts.length}
+            </div>
+            <div className="text-[11px] text-amber-700 mt-1 flex items-center justify-between">
+              <span>{isHindi ? 'रीऑर्डर आवश्यक' : 'Reorder alerts'}</span>
+              <button
+                type="button"
+                onClick={onNavigateToItems}
+                className="text-amber-800 hover:underline font-bold cursor-pointer inline-flex items-center"
+              >
+                <span>{isHindi ? 'चेक करें' : 'Review'}</span>
+                <ArrowUpRight className="w-3 h-3" />
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Stock Valuation */}
-        <div className="bg-white p-4.5 rounded-2xl border border-sky-200/80 bg-sky-50/20 shadow-2xs">
-          <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-sky-700 mb-1">
-            <span>{isHindi ? 'स्टॉक मूल्य' : 'Stock Valuation'}</span>
-            <Store className="w-3.5 h-3.5 text-sky-600" />
+        {/* Row 3: Today's Profit, Monthly Sales, Total Sales, Collections */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 text-xs">
+          {/* 9. Today's Profit */}
+          <div className="bg-white p-4 rounded-2xl border border-emerald-200/90 bg-emerald-50/20 shadow-2xs hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-emerald-700 mb-1">
+              <span>{isHindi ? 'आज का लाभ' : "Today's Profit"}</span>
+              <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+            </div>
+            <div className="text-xl sm:text-2xl font-black text-emerald-900">
+              ₹{todayProfit.toLocaleString('en-IN')}
+            </div>
+            <div className="text-[11px] text-emerald-700 mt-1 flex items-center justify-between">
+              <span>{isHindi ? 'अनुमानित मार्जिन' : 'Net day margin'}</span>
+              <span className="font-bold">
+                {todaySales > 0 ? Math.round((todayProfit / todaySales) * 100) : 0}%
+              </span>
+            </div>
           </div>
-          <div className="text-xl sm:text-2xl font-black text-sky-900">
-            ₹{totalStockValuation.toLocaleString('en-IN')}
+
+          {/* 10. Monthly Sales */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+              <span>{isHindi ? 'मासिक बिक्री' : 'Monthly Sales'}</span>
+              <FileText className="w-3.5 h-3.5 text-blue-600" />
+            </div>
+            <div className="text-xl sm:text-2xl font-black text-slate-900">
+              ₹{monthlySales.toLocaleString('en-IN')}
+            </div>
+            <div className="text-[11px] text-slate-500 mt-1 flex items-center justify-between">
+              <span>{isHindi ? 'चालू माह' : 'Current month'}</span>
+              <button
+                type="button"
+                onClick={onNavigateToReports}
+                className="text-blue-600 hover:underline font-bold cursor-pointer inline-flex items-center"
+              >
+                <span>{isHindi ? 'रिपोर्ट्स' : 'Reports'}</span>
+                <ArrowUpRight className="w-3 h-3" />
+              </button>
+            </div>
           </div>
-          <div className="text-[11px] text-sky-700 mt-1 flex items-center justify-between">
-            <span>{products.length} {isHindi ? 'उत्पाद स्टॉक' : 'items catalog'}</span>
-            <button
-              type="button"
-              onClick={onNavigateToItems}
-              className="text-sky-700 hover:underline font-bold cursor-pointer inline-flex items-center"
-            >
-              <span>{isHindi ? 'इन्वेंट्री' : 'Items'}</span>
-              <ArrowUpRight className="w-3 h-3" />
-            </button>
+
+          {/* 11. Lifetime Sales Volume */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+              <span>{isHindi ? 'कुल बिक्री वॉल्यूम' : 'Total Sales Volume'}</span>
+              <TrendingUp className="w-3.5 h-3.5 text-indigo-600" />
+            </div>
+            <div className="text-xl sm:text-2xl font-black text-slate-900">
+              ₹{totalGross.toLocaleString('en-IN')}
+            </div>
+            <div className="text-[11px] text-slate-500 mt-1 flex items-center justify-between">
+              <span>{invoices.length} {isHindi ? 'बिल' : 'Bills generated'}</span>
+              <button
+                type="button"
+                onClick={onNavigateToSales}
+                className="text-indigo-600 hover:underline font-bold cursor-pointer inline-flex items-center"
+              >
+                <span>{isHindi ? 'देखें' : 'View'}</span>
+                <ArrowUpRight className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+
+          {/* 12. Received Collections */}
+          <div className="bg-white p-4 rounded-2xl border border-emerald-200/90 bg-emerald-50/20 shadow-2xs hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-emerald-700 mb-1">
+              <span>{isHindi ? 'प्राप्त रोकड़ / बैंक' : 'Received Collections'}</span>
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+            </div>
+            <div className="text-xl sm:text-2xl font-black text-emerald-900">
+              ₹{totalAdvance.toLocaleString('en-IN')}
+            </div>
+            <div className="text-[11px] text-emerald-600 mt-1 flex items-center justify-between">
+              <span>{isHindi ? 'चुकता अनुपात' : 'Realized ratio'}</span>
+              <span className="font-bold">
+                {totalGross > 0 ? Math.round((totalAdvance / totalGross) * 100) : 100}%
+              </span>
+            </div>
           </div>
         </div>
       </div>

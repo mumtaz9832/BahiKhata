@@ -79,7 +79,7 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-base sm:text-lg font-black tracking-tight">
-                  BahiKhata Pro Dealership Suite
+                  BIZCORE Pro Business Suite
                 </h2>
                 <span className="text-[10px] font-bold bg-amber-400 text-slate-950 px-2 py-0.5 rounded-full uppercase">
                   Zero Watermark
@@ -179,7 +179,7 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
                       <span>2W, 4W, EV &amp; Retail Forms</span>
                     </li>
                     <li className="flex items-center gap-2 text-slate-400">
-                      <span>&bull; Has "Powered by BahiKhata" watermark</span>
+                      <span>&bull; Has "Powered by BIZCORE" watermark</span>
                     </li>
                   </ul>
                 </div>
@@ -246,7 +246,7 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
               <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
                 <div className="flex justify-between items-center border-b border-slate-200 pb-2 mb-3">
                   <span className="font-bold text-slate-800">
-                    BahiKhata Pro ({selectedPlan === 'yearly' ? 'Annual Plan' : 'Monthly Plan'})
+                    BIZCORE Pro ({selectedPlan === 'yearly' ? 'Annual Plan' : 'Monthly Plan'})
                   </span>
                   <span className="font-mono font-black text-sm text-slate-900">
                     {selectedPlan === 'yearly' ? '₹2,499' : '₹299'}

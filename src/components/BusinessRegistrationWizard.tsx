@@ -38,7 +38,7 @@ import {
   Send,
   RotateCcw,
 } from 'lucide-react';
-import { BahiKhataLogo } from './BahiKhataLogo';
+import { BizcoreLogo } from './BizcoreLogo';
 import { requestMobileOtp, submitMobileOtp } from '../services/otpClient';
 
 interface BusinessRegistrationWizardProps {
@@ -211,7 +211,7 @@ export const BusinessRegistrationWizard: React.FC<BusinessRegistrationWizardProp
   // Step 2: Business Profile
   const [businessName, setBusinessName] = useState(
     initialProfile.businessName ||
-      (initialProfile.name !== 'BahiKhata Business' ? initialProfile.name : '') ||
+      (initialProfile.name !== 'BIZCORE Business' && initialProfile.name !== 'BahiKhata Business' ? initialProfile.name : '') ||
       (fullName ? `${fullName}'s Business` : '')
   );
   const [businessType, setBusinessType] = useState<BusinessType>(
@@ -683,13 +683,13 @@ export const BusinessRegistrationWizard: React.FC<BusinessRegistrationWizardProp
             <div>
               {/* Brand Header */}
               <div className="flex items-center gap-2.5 mb-6">
-                <BahiKhataLogo variant="icon" size="sm" />
+                <BizcoreLogo variant="icon" size="sm" />
                 <div>
                   <div className="flex items-center tracking-tight leading-none">
-                    <span className="font-black text-lg text-white">Bahi</span>
-                    <span className="font-black text-lg text-rose-500">Khata</span>
+                    <span className="font-black text-lg text-white">BIZ</span>
+                    <span className="font-black text-lg text-blue-400">CORE</span>
                   </div>
-                  <span className="text-[10px] text-amber-300 font-bold tracking-wider uppercase">
+                  <span className="text-[10px] text-blue-300 font-bold tracking-wider uppercase">
                     Registration Hub
                   </span>
                 </div>
@@ -1576,7 +1576,7 @@ export const BusinessRegistrationWizard: React.FC<BusinessRegistrationWizardProp
                     <Sparkles className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
                     <div>
                       <h4 className="font-black text-slate-900 text-xs">
-                        {isHindi ? 'आपका BahiKhata बिज़नेस इंजन तैयार है!' : 'Your BahiKhata Business Engine is Ready!'}
+                        {isHindi ? 'आपका BIZCORE बिज़नेस इंजन तैयार है!' : 'Your BIZCORE Business Engine is Ready!'}
                       </h4>
                       <p className="text-[11px] text-slate-600 mt-0.5">
                         {isHindi

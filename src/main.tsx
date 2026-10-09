@@ -23,7 +23,7 @@ class RootErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('BahiKhata App Render Error:', error, errorInfo);
+    console.error('BIZCORE App Render Error:', error, errorInfo);
   }
 
   handleReset = () => {
@@ -40,11 +40,11 @@ class RootErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState
       return (
         <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f8fafc', padding: '20px', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
           <div style={{ maxWidth: '480px', width: '100%', backgroundColor: '#ffffff', padding: '28px', borderRadius: '16px', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)', border: '1px solid #e2e8f0', textAlign: 'center' }}>
-            <div style={{ width: '48px', height: '48px', backgroundColor: '#fef3c7', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', color: '#b45309', fontSize: '22px', fontWeight: 'bold' }}>
-              BK
+            <div style={{ width: '48px', height: '48px', backgroundColor: '#eff6ff', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', color: '#1d4ed8', fontSize: '20px', fontWeight: 'bold' }}>
+              BC
             </div>
             <h2 style={{ fontSize: '18px', fontWeight: '800', color: '#0f172a', marginBottom: '8px' }}>
-              BahiKhata Loaded
+              BIZCORE Application
             </h2>
             <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px', lineHeight: '1.5' }}>
               A temporary issue occurred while loading stored invoice data. Click below to refresh or restore defaults.

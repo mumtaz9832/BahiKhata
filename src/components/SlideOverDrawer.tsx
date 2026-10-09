@@ -26,6 +26,7 @@ import {
   QrCode,
   Users,
   Package,
+  Shield,
 } from 'lucide-react';
 import { GoogleSignInButton } from './GoogleSignInButton';
 
@@ -45,6 +46,8 @@ interface SlideOverDrawerProps {
   onOpenSettings: () => void;
   onOpenSubscription: () => void;
   onOpenDriveModal: () => void;
+  onOpenBackupModal?: () => void;
+  onOpenAdminPanel?: () => void;
   onOpenKhata: () => void;
   onOpenQuickQR: () => void;
   pendingBalanceCount: number;
@@ -70,6 +73,8 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
   onOpenSettings,
   onOpenSubscription,
   onOpenDriveModal,
+  onOpenBackupModal,
+  onOpenAdminPanel,
   onOpenKhata,
   onOpenQuickQR,
   pendingBalanceCount,
@@ -95,12 +100,12 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
           {/* Drawer Header */}
           <div className="p-4 sm:p-5 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-amber-400 text-slate-950 font-black flex items-center justify-center text-sm shadow-xs">
-                BK
+              <div className="w-9 h-9 rounded-xl bg-blue-600 text-white font-black flex items-center justify-center text-sm shadow-xs">
+                BC
               </div>
               <div>
                 <h3 className="font-extrabold text-base tracking-tight text-white flex items-center gap-1.5">
-                  <span>BahiKhata Menu</span>
+                  <span>BIZCORE Menu</span>
                 </h3>
                 <p className="text-xs text-slate-400 truncate max-w-[220px]">{profile.name}</p>
               </div>
@@ -330,6 +335,62 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                 </div>
                 <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-slate-700 transition-transform group-hover:translate-x-0.5" />
               </button>
+
+              {/* Manual Local JSON Backup & Restore */}
+              {onOpenBackupModal && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenBackupModal();
+                  }}
+                  className="w-full flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition-all text-left cursor-pointer group"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:bg-emerald-600 group-hover:text-white transition-colors">
+                      <Database className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                        <span>Manual JSON Backup &amp; Restore</span>
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded">
+                          Offline Safe
+                        </span>
+                      </h4>
+                      <p className="text-[11px] text-slate-500">Export &amp; import local data offline with rollback safety</p>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-slate-700 transition-transform group-hover:translate-x-0.5" />
+                </button>
+              )}
+
+              {/* Master Admin Panel */}
+              {onOpenAdminPanel && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenAdminPanel();
+                  }}
+                  className="w-full flex items-center justify-between p-3 rounded-xl border border-slate-800 bg-slate-900 hover:bg-slate-800 transition-all text-left cursor-pointer group text-white"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-amber-400/20 text-amber-400 flex items-center justify-center group-hover:bg-amber-400 group-hover:text-slate-950 transition-colors">
+                      <Shield className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-white text-xs flex items-center gap-1.5">
+                        <span>Master Admin Panel</span>
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 bg-amber-400/20 text-amber-300 rounded border border-amber-400/30">
+                          Secure
+                        </span>
+                      </h4>
+                      <p className="text-[11px] text-slate-400">2-Factor Authentication &amp; System Controls</p>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-white transition-transform group-hover:translate-x-0.5" />
+                </button>
+              )}
             </div>
 
             {/* 4. Plan & Subscription */}
@@ -472,7 +533,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
 
           {/* Drawer Footer */}
           <div className="p-4 bg-slate-50 border-t border-slate-200 text-center text-[11px] text-slate-500">
-            <span className="font-bold text-slate-700">BahiKhata Platform</span> &bull; Production v3.0
+            <span className="font-bold text-slate-700">BIZCORE Platform</span> &bull; Production SaaS Suite
           </div>
         </div>
       </div>

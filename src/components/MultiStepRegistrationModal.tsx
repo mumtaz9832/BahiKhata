@@ -25,7 +25,7 @@ import {
   Loader2,
   Zap,
 } from 'lucide-react';
-import { BahiKhataLogo } from './BahiKhataLogo';
+import { BizcoreLogo } from './BizcoreLogo';
 import { BusinessProfile } from '../types';
 import {
   INDUSTRY_CATEGORIES,
@@ -117,6 +117,7 @@ export const MultiStepRegistrationModal: React.FC<MultiStepRegistrationModalProp
   const isEditingSavedProfile = Boolean(
     initialProfile?.registrationCompleted &&
     initialProfile?.name &&
+    initialProfile.name !== 'BIZCORE Business' &&
     initialProfile.name !== 'BahiKhata Business'
   );
 
@@ -557,7 +558,7 @@ export const MultiStepRegistrationModal: React.FC<MultiStepRegistrationModalProp
       const finalOwnerName = ownerName.trim() || initialProfile?.fullName || initialUser?.displayName || 'Merchant';
       const rawPhone = mobileNumber || initialProfile?.mobileNumber || initialProfile?.phone || '9876543210';
       const cleanPhone = rawPhone.replace(/\D/g, '').slice(-10) || '9876543210';
-      const finalEmail = (email.trim() || initialUser?.email || initialProfile?.email || 'business@bahikhata.com').toLowerCase();
+      const finalEmail = (email.trim() || initialUser?.email || initialProfile?.email || 'business@bizcore.app').toLowerCase();
 
       // Ensure all features are active if none selected
       const finalEnabledFeatures =
@@ -642,7 +643,7 @@ export const MultiStepRegistrationModal: React.FC<MultiStepRegistrationModalProp
         {/* Header with App Branding & Progress Indicator */}
         <div className="p-4 sm:p-5 border-b border-slate-800 bg-slate-950/80 flex items-center justify-between shrink-0 gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            <BahiKhataLogo variant="icon" size="sm" />
+            <BizcoreLogo variant="icon" size="sm" />
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-base sm:text-lg font-black text-white tracking-tight truncate">
@@ -1024,7 +1025,7 @@ export const MultiStepRegistrationModal: React.FC<MultiStepRegistrationModalProp
             <div className="space-y-4 animate-in fade-in duration-200">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-xs text-slate-400">
-                  Select your primary industry. BahiKhata will customize categories, units, and dashboard metrics.
+                  Select your primary industry. BIZCORE will customize categories, units, and dashboard metrics.
                 </p>
                 <span className="text-xs font-mono text-amber-400 shrink-0">
                   {INDUSTRY_CATEGORIES.length} Industries

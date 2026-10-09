@@ -59,6 +59,9 @@ import { DeliveryChallanDocument } from './components/DeliveryChallanDocument';
 import { WhatsAppModal } from './components/WhatsAppModal';
 import { KhataLedger } from './components/KhataLedger';
 import { SettingsModal } from './components/SettingsModal';
+import { BackupRestoreModal } from './components/BackupRestoreModal';
+import { AdminPanelModal } from './components/AdminPanelModal';
+import { isAdminLoggedIn } from './utils/adminAuth';
 import { GoogleDriveModal } from './components/GoogleDriveModal';
 import { SubscriptionModal } from './components/SubscriptionModal';
 import { SlideOverDrawer } from './components/SlideOverDrawer';
@@ -202,6 +205,8 @@ export default function App() {
   // Modals & Drawers
   const [isKhataOpen, setIsKhataOpen] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [isBackupModalOpen, setIsBackupModalOpen] = useState<boolean>(false);
+  const [isAdminPanelOpen, setIsAdminPanelOpen] = useState<boolean>(false);
   const [isWhatsAppOpen, setIsWhatsAppOpen] = useState<boolean>(false);
   const [whatsAppInvoice, setWhatsAppInvoice] = useState<SavedInvoice | null>(null);
   const [isDriveModalOpen, setIsDriveModalOpen] = useState<boolean>(false);
@@ -234,13 +239,20 @@ export default function App() {
 
   // Helper to verify if an authenticated user session is active
   const isSessionAuthenticated = () => {
-    if (localStorage.getItem('bahikhata_authenticated') === 'true') return true;
-    if (localStorage.getItem('bahikhata_guest_mode') === 'true') return true;
+    if (
+      localStorage.getItem('bizcore_authenticated') === 'true' ||
+      localStorage.getItem('bahikhata_authenticated') === 'true'
+    ) return true;
+    if (
+      localStorage.getItem('bizcore_guest_mode') === 'true' ||
+      localStorage.getItem('bahikhata_guest_mode') === 'true'
+    ) return true;
     const currentProf = getBusinessProfile();
     return Boolean(
       currentProf &&
       currentProf.registrationCompleted &&
       currentProf.name &&
+      currentProf.name !== 'BIZCORE Business' &&
       currentProf.name !== 'BahiKhata Business'
     );
   };
@@ -303,8 +315,13 @@ export default function App() {
           const activeProf = remoteProfile || getBusinessProfile();
           setProfile(activeProf);
 
-          if (activeProf.registrationCompleted && activeProf.name && activeProf.name !== 'BahiKhata Business') {
-            localStorage.setItem('bahikhata_authenticated', 'true');
+          if (
+            activeProf.registrationCompleted &&
+            activeProf.name &&
+            activeProf.name !== 'BIZCORE Business' &&
+            activeProf.name !== 'BahiKhata Business'
+          ) {
+            localStorage.setItem('bizcore_authenticated', 'true');
             setIsWelcomeScreenOpen(false);
             setIsAuthModalOpen(false);
             setIsMultiStepRegistrationOpen(false);
@@ -326,6 +343,40 @@ export default function App() {
     return () => {
       unsubscribe();
     };
+  }, []);
+
+  // Handler to refresh all state when local JSON backup is restored or rolled back
+  const handleDataRestored = () => {
+    const updatedInvoices = getSavedInvoices();
+    const updatedProfile = getBusinessProfile();
+    const updatedBusinesses = getAllBusinesses();
+    const updatedCustomers = getSavedCustomers();
+    const updatedProducts = getSavedProducts();
+    const updatedSubscription = getSubscriptionState();
+    const updatedLang = getLanguagePreference();
+
+    setInvoices(updatedInvoices);
+    setProfile(updatedProfile);
+    setBusinesses(updatedBusinesses);
+    if (updatedProfile.id) {
+      setActiveBusinessId(updatedProfile.id);
+    }
+    setCustomers(updatedCustomers);
+    setProducts(updatedProducts);
+    setSubscription(updatedSubscription);
+    setLang(updatedLang);
+
+    const isAuto = Boolean(
+      updatedProfile.industryCategory?.toLowerCase().includes('auto') ||
+      updatedProfile.industryType?.toLowerCase().includes('auto')
+    );
+    setMode(isAuto ? 'auto_dealer' : 'general_retail');
+  };
+
+  useEffect(() => {
+    const onRestoreEvent = () => handleDataRestored();
+    window.addEventListener('bizcore:data-restored', onRestoreEvent);
+    return () => window.removeEventListener('bizcore:data-restored', onRestoreEvent);
   }, []);
 
   // Assemble active invoice object
@@ -390,6 +441,7 @@ export default function App() {
       if (res) {
         setUser(res.user);
         setAccessToken(res.accessToken);
+        localStorage.removeItem('bizcore_guest_mode');
         localStorage.removeItem('bahikhata_guest_mode');
         setIsAuthModalOpen(false);
 
@@ -427,7 +479,7 @@ export default function App() {
   // Complete Multi-Step Business Registration
   const handleCompleteMultiStepRegistration = async (business: BusinessProfile) => {
     try {
-      const effectiveUserId = user?.uid || business.userId || `bahi_${Date.now()}`;
+      const effectiveUserId = user?.uid || business.userId || `biz_${Date.now()}`;
       const prepared: BusinessProfile = {
         ...business,
         userId: effectiveUserId,
@@ -441,8 +493,11 @@ export default function App() {
       saveBusinessProfile(prepared);
       setBusinesses(updatedBusinesses);
       setProfile(prepared);
+      localStorage.setItem('bizcore_authenticated', 'true');
       localStorage.setItem('bahikhata_authenticated', 'true');
+      localStorage.removeItem('bizcore_guest_mode');
       localStorage.removeItem('bahikhata_guest_mode');
+      localStorage.setItem('bizcore_onboarded', 'true');
       localStorage.setItem('bahikhata_onboarded', 'true');
 
       // Align dashboard mode based on the business's industry category
@@ -475,6 +530,7 @@ export default function App() {
     } catch (err) {
       console.error('Registration completion error:', err);
       // Fallback: Ensure modal closes and dashboard is unlocked
+      localStorage.setItem('bizcore_authenticated', 'true');
       localStorage.setItem('bahikhata_authenticated', 'true');
       setIsMultiStepRegistrationOpen(false);
       setIsWelcomeScreenOpen(false);
@@ -484,7 +540,7 @@ export default function App() {
 
   // Complete Single Business Registration
   const handleCompleteSingleRegistration = async (data: RegistrationData) => {
-    const effectiveUserId = user?.uid || data.userId || `bahi_${Date.now()}`;
+    const effectiveUserId = user?.uid || data.userId || `biz_${Date.now()}`;
     const nowIso = new Date().toISOString();
 
     const updatedProf: BusinessProfile = {
@@ -511,8 +567,11 @@ export default function App() {
 
     setProfile(updatedProf);
     saveBusinessProfile(updatedProf);
+    localStorage.setItem('bizcore_authenticated', 'true');
     localStorage.setItem('bahikhata_authenticated', 'true');
+    localStorage.removeItem('bizcore_guest_mode');
     localStorage.removeItem('bahikhata_guest_mode');
+    localStorage.setItem('bizcore_onboarded', 'true');
     localStorage.setItem('bahikhata_onboarded', 'true');
 
     if (effectiveUserId) {
@@ -537,7 +596,9 @@ export default function App() {
     await logout();
     setUser(null);
     setAccessToken(null);
+    localStorage.removeItem('bizcore_authenticated');
     localStorage.removeItem('bahikhata_authenticated');
+    localStorage.removeItem('bizcore_guest_mode');
     localStorage.removeItem('bahikhata_guest_mode');
     setIsWelcomeScreenOpen(true);
     setIsAuthModalOpen(false);
@@ -926,7 +987,7 @@ export default function App() {
     );
     const recipientEmail = matchedCustomer?.email || '';
 
-    const businessName = profile.businessName || profile.name || 'BahiKhata Business';
+    const businessName = profile.businessName || profile.name || 'BIZCORE Business';
     const grandTotal = isAuto
       ? autoData.pricing.totalSaleValue || 0
       : retailData.grandTotal || 0;
@@ -1082,6 +1143,8 @@ export default function App() {
         onOpenQuickQR={() => setIsQuickQROpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenDriveModal={() => setIsDriveModalOpen(true)}
+        onOpenBackupModal={() => setIsBackupModalOpen(true)}
+        onOpenAdminPanel={() => setIsAdminPanelOpen(true)}
         onOpenSubscription={() => setIsSubscriptionOpen(true)}
         onOpenKhata={() => setIsKhataOpen(true)}
         onNewInvoice={() => {
@@ -1119,13 +1182,24 @@ export default function App() {
           onAddCustomer={() => setIsCustomerModalOpen(true)}
           onAddProduct={() => setIsProductModalOpen(true)}
           onOpenQuickQR={() => setIsQuickQROpen(true)}
+          onOpenBackupModal={() => setIsBackupModalOpen(true)}
           onToggleSidebarMobile={() => setIsSidebarOpenMobile((prev) => !prev)}
           pendingBalanceCount={pendingCount}
           subscription={subscription}
           lang={lang}
           onToggleLang={handleToggleLang}
           searchQuery={searchQuery}
-          onSearchChange={(q) => setSearchQuery(q)}
+          onSearchChange={(q) => {
+            setSearchQuery(q);
+            if (q.trim().length > 0 && currentView !== 'sales') {
+              setCurrentView('sales');
+            }
+          }}
+          invoices={invoices}
+          onSelectInvoiceToView={(inv) => {
+            handleSelectInvoiceFromKhata(inv);
+            setCurrentView('generate_bill');
+          }}
           user={user}
           onOpenAuthModal={() => setIsAuthModalOpen(true)}
           onSignOut={handleGoogleSignOut}
@@ -1153,6 +1227,7 @@ export default function App() {
               onAddCustomer={() => setIsCustomerModalOpen(true)}
               onAddProduct={() => setIsProductModalOpen(true)}
               onOpenQuickQR={() => setIsQuickQROpen(true)}
+              onOpenBackupModal={() => setIsBackupModalOpen(true)}
               onOpenKhata={() => setIsKhataOpen(true)}
               onNavigateToSales={() => setCurrentView('sales')}
               onNavigateToParties={() => setCurrentView('parties')}
@@ -1204,6 +1279,7 @@ export default function App() {
                 setCurrentView('generate_bill');
               }}
               searchQuery={searchQuery}
+              onSearchChange={(q) => setSearchQuery(q)}
             />
           )}
 
@@ -1640,7 +1716,7 @@ export default function App() {
       <footer className="bg-white border-t border-slate-200 py-4 px-4 sm:px-6 text-center text-xs text-slate-500 no-print mt-auto">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
           <p className="flex items-center gap-1.5">
-            <span className="font-bold text-slate-800">BahiKhata</span> &bull; Smart Billing &amp; Ledger Platform with A4 Printing &amp; Cloud Drive Sync.
+            <span className="font-bold text-slate-800">BIZCORE</span> &bull; Complete Business Management Software with Billing, POS, Inventory &amp; Accounting.
           </p>
           <div className="flex items-center gap-4 text-slate-400">
             <button
@@ -1705,6 +1781,8 @@ export default function App() {
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenSubscription={() => setIsSubscriptionOpen(true)}
         onOpenDriveModal={() => setIsDriveModalOpen(true)}
+        onOpenBackupModal={() => setIsBackupModalOpen(true)}
+        onOpenAdminPanel={() => setIsAdminPanelOpen(true)}
         onOpenKhata={() => setIsKhataOpen(true)}
         onOpenQuickQR={() => setIsQuickQROpen(true)}
         pendingBalanceCount={pendingCount}
@@ -1788,6 +1866,15 @@ export default function App() {
         onOpenRegistrationWizard={() => {
           setIsMultiStepRegistrationOpen(true);
         }}
+        onOpenBackupModal={() => setIsBackupModalOpen(true)}
+        onOpenAdminPanel={() => setIsAdminPanelOpen(true)}
+      />
+
+      <BackupRestoreModal
+        isOpen={isBackupModalOpen}
+        onClose={() => setIsBackupModalOpen(false)}
+        onDataRestored={handleDataRestored}
+        lang={lang}
       />
 
       <GoogleDriveModal
@@ -1816,6 +1903,7 @@ export default function App() {
           setIsMultiStepRegistrationOpen(true);
         }}
         onContinueAsGuest={() => {
+          localStorage.setItem('bizcore_guest_mode', 'true');
           localStorage.setItem('bahikhata_guest_mode', 'true');
           setIsWelcomeScreenOpen(false);
         }}
@@ -1832,20 +1920,18 @@ export default function App() {
             setIsWelcomeScreenOpen(true);
           }
         }}
-        user={user}
-        isLoading={isAuthLoading}
-        onGoogleSignIn={handleGoogleSignIn}
         onOpenRegister={() => {
           setIsAuthModalOpen(false);
           setIsMultiStepRegistrationOpen(true);
         }}
-        onContinueAsGuest={() => {
-          localStorage.setItem('bahikhata_guest_mode', 'true');
+        onOpenAdminPanel={() => {
           setIsAuthModalOpen(false);
-          setIsWelcomeScreenOpen(false);
+          setIsAdminPanelOpen(true);
         }}
         onOtpLoginSuccess={(loggedPhone) => {
+          localStorage.setItem('bizcore_authenticated', 'true');
           localStorage.setItem('bahikhata_authenticated', 'true');
+          localStorage.removeItem('bizcore_guest_mode');
           localStorage.removeItem('bahikhata_guest_mode');
           const clean = loggedPhone.replace(/\D/g, '').slice(-10);
           const allBiz = getAllBusinesses();
@@ -1878,12 +1964,23 @@ export default function App() {
         lang={lang}
       />
 
+      {/* Master Admin Panel Modal (Manual credentials & 2FA protected) */}
+      <AdminPanelModal
+        isOpen={isAdminPanelOpen}
+        onClose={() => setIsAdminPanelOpen(false)}
+        onDataChanged={handleDataRestored}
+        onOpenBackupModal={() => setIsBackupModalOpen(true)}
+        initialUnlocked={isAdminLoggedIn()}
+        lang={lang}
+      />
+
       {/* 5-Step Advanced Multi-Industry Business Registration Modal */}
       <MultiStepRegistrationModal
         isOpen={isMultiStepRegistrationOpen}
         onClose={() => {
           setIsMultiStepRegistrationOpen(false);
           if (!isSessionAuthenticated()) {
+            localStorage.setItem('bizcore_guest_mode', 'true');
             localStorage.setItem('bahikhata_guest_mode', 'true');
           }
           setIsWelcomeScreenOpen(false);
@@ -1915,6 +2012,7 @@ export default function App() {
         onClose={() => {
           setIsSingleRegistrationOpen(false);
           if (!isSessionAuthenticated()) {
+            localStorage.setItem('bizcore_guest_mode', 'true');
             localStorage.setItem('bahikhata_guest_mode', 'true');
           }
           setIsWelcomeScreenOpen(false);
@@ -1943,6 +2041,7 @@ export default function App() {
       <OnboardingModal
         isOpen={isOnboardingOpen}
         onClose={() => {
+          localStorage.setItem('bizcore_onboarded', 'true');
           localStorage.setItem('bahikhata_onboarded', 'true');
           setIsOnboardingOpen(false);
         }}
@@ -1963,6 +2062,7 @@ export default function App() {
         onSaveProfile={(updatedProf, newMode) => {
           handleSaveProfile(updatedProf);
           setMode(newMode);
+          localStorage.setItem('bizcore_onboarded', 'true');
           localStorage.setItem('bahikhata_onboarded', 'true');
         }}
         lang={lang}

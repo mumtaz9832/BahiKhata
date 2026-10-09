@@ -42,8 +42,10 @@ import {
   Wrench,
   DollarSign,
   Wallet,
+  Database,
+  Shield,
 } from 'lucide-react';
-import { BahiKhataLogo } from './BahiKhataLogo';
+import { BizcoreLogo } from './BizcoreLogo';
 
 interface VyaparSidebarProps {
   currentView: AppView;
@@ -61,6 +63,8 @@ interface VyaparSidebarProps {
   onOpenQuickQR: () => void;
   onOpenSettings: () => void;
   onOpenDriveModal: () => void;
+  onOpenBackupModal?: () => void;
+  onOpenAdminPanel?: () => void;
   onOpenSubscription: () => void;
   onOpenKhata: () => void;
   onNewInvoice: () => void;
@@ -91,6 +95,8 @@ export const VyaparSidebar: React.FC<VyaparSidebarProps> = ({
   onOpenQuickQR,
   onOpenSettings,
   onOpenDriveModal,
+  onOpenBackupModal,
+  onOpenAdminPanel,
   onOpenSubscription,
   onOpenKhata,
   onNewInvoice,
@@ -242,6 +248,22 @@ export const VyaparSidebar: React.FC<VyaparSidebarProps> = ({
       action: onOpenDriveModal,
     },
     {
+      id: 'backup' as const,
+      label: isHindi ? 'डेटा बैकअप' : 'Backup & Restore',
+      icon: Database,
+      action: onOpenBackupModal,
+    },
+    ...(onOpenAdminPanel
+      ? [
+          {
+            id: 'admin' as const,
+            label: isHindi ? 'एडमिन पैनल' : 'Admin Panel',
+            icon: Shield,
+            action: onOpenAdminPanel,
+          },
+        ]
+      : []),
+    {
       id: 'settings' as const,
       label: isHindi ? 'व्यापार सेटिंग्स' : 'Business Settings',
       icon: Settings,
@@ -262,15 +284,15 @@ export const VyaparSidebar: React.FC<VyaparSidebarProps> = ({
             }}
             className="flex items-center gap-2.5 text-left group cursor-pointer overflow-hidden"
           >
-            <BahiKhataLogo variant="icon" size="sm" />
+            <BizcoreLogo variant="icon" size="sm" />
             <div className="overflow-hidden">
               <div className="flex items-center gap-1">
                 <span className="font-black text-white text-base tracking-tight truncate max-w-[130px]">
-                  BahiKhata
+                  BIZCORE
                 </span>
               </div>
-              <p className="text-[10px] text-amber-400 font-semibold tracking-wide uppercase truncate">
-                {isHindi ? 'स्मार्ट बिलिंग एवं खाता' : 'Smart Billing & Khata'}
+              <p className="text-[10px] text-blue-400 font-semibold tracking-wide uppercase truncate">
+                {isHindi ? 'सम्पूर्ण व्यापार प्रबंधन' : 'Business Management'}
               </p>
             </div>
           </button>
@@ -279,9 +301,9 @@ export const VyaparSidebar: React.FC<VyaparSidebarProps> = ({
             type="button"
             onClick={() => onNavigate('home')}
             className="mx-auto cursor-pointer"
-            title="BahiKhata"
+            title="BIZCORE"
           >
-            <BahiKhataLogo variant="icon" size="sm" />
+            <BizcoreLogo variant="icon" size="sm" />
           </button>
         )}
 

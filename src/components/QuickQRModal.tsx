@@ -32,7 +32,7 @@ export const QuickQRModal: React.FC<QuickQRModalProps> = ({
   }, [upiId]);
 
   const effectiveUpi = (customUpi.trim() || upiId?.trim() || 'merchant@upi');
-  const effectivePayee = payeeName?.trim() || 'BahiKhata Merchant';
+  const effectivePayee = payeeName?.trim() || 'BIZCORE Merchant';
 
   useEffect(() => {
     if (!isOpen) return;

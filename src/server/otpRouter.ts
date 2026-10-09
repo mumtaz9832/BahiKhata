@@ -8,8 +8,21 @@ import {
   verifyEmailOtp,
   validateRegistrationTokens,
 } from './otpService.ts';
-import { getSmsProvider, getEmailProvider } from './providers.ts';
+import {
+  getSmsProvider,
+  getEmailProvider,
+  type SmsProvider,
+  type EmailProvider,
+  mockOtpMemoryStore,
+  MockOtpProvider,
+  mockOtpProvider,
+  type MockOtpRecord,
+} from './providers.ts';
 import type { ServerRegisterRequest } from './types.ts';
+
+// Re-export mock OTP provider, record, and in-memory temporary store
+export { mockOtpMemoryStore, MockOtpProvider, mockOtpProvider };
+export type { MockOtpRecord };
 
 export const otpRouter = express.Router();
 

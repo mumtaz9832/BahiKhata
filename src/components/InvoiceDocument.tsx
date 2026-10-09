@@ -634,15 +634,15 @@ export const InvoiceDocument: React.FC<InvoiceDocumentProps> = ({
       {hasWatermark && (
         <div className="mt-4 pt-2 border-t border-slate-200 text-center avoid-break page-break-avoid">
           <div className="inline-flex items-center gap-2 px-3 py-1 bg-slate-50 text-slate-500 border border-slate-200 rounded-full text-[10px] font-semibold">
-            <span>⚡ Powered by BahiKhata</span>
+            <span>⚡ Powered by BIZCORE</span>
             <span className="text-slate-300">&bull;</span>
-            <span className="text-amber-700">Free Tier</span>
+            <span className="text-blue-700">Free Tier</span>
           </div>
         </div>
       )}
 
       <div className="text-center text-[9px] text-slate-400 mt-4 pt-2 border-t border-slate-100">
-        This is a computer-generated tax &amp; sale invoice generated via AutoBill &amp; Smart Khata.
+        This is a computer-generated tax &amp; sale invoice generated via BIZCORE Business Management Suite.
       </div>
     </div>
   );

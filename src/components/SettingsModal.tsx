@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { BusinessProfile } from '../types';
-import { X, Building2, CreditCard, ShieldCheck, Check, Trash2 } from 'lucide-react';
+import { X, Building2, CreditCard, ShieldCheck, Check, Trash2, Database, Download, Shield } from 'lucide-react';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -9,6 +9,8 @@ interface SettingsModalProps {
   onSave: (updated: BusinessProfile) => void;
   onClearAllData?: () => void;
   onOpenRegistrationWizard?: () => void;
+  onOpenBackupModal?: () => void;
+  onOpenAdminPanel?: () => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -18,6 +20,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onSave,
   onClearAllData,
   onOpenRegistrationWizard,
+  onOpenBackupModal,
+  onOpenAdminPanel,
 }) => {
   if (!isOpen) return null;
 
@@ -88,6 +92,64 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 className="px-3.5 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold rounded-xl text-xs transition-colors shrink-0 shadow-2xs cursor-pointer"
               >
                 Launch Wizard
+              </button>
+            </div>
+          )}
+
+          {/* Manual JSON Backup & Data Security Card */}
+          {onOpenBackupModal && (
+            <div className="p-3.5 bg-gradient-to-r from-emerald-50 to-indigo-50/50 border border-emerald-200/80 rounded-2xl flex items-center justify-between gap-3">
+              <div>
+                <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                  <Database className="w-4 h-4 text-emerald-600" />
+                  <span>Manual JSON Backup &amp; Restore</span>
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded">
+                    Offline Safe
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-600 mt-0.5">
+                  Export complete offline .json backup of bills, khata ledger &amp; stock, or restore from a previous file with rollback safety.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenBackupModal();
+                }}
+                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition-colors shrink-0 shadow-2xs cursor-pointer flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Backup &amp; Restore</span>
+              </button>
+            </div>
+          )}
+
+          {/* Master Admin Panel Launch Card */}
+          {onOpenAdminPanel && (
+            <div className="p-3.5 bg-gradient-to-r from-slate-900 to-indigo-950 border border-slate-800 rounded-2xl flex items-center justify-between gap-3 text-white">
+              <div>
+                <div className="font-bold text-xs flex items-center gap-1.5">
+                  <Shield className="w-4 h-4 text-amber-400" />
+                  <span>Master Admin Panel</span>
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 bg-amber-400/20 text-amber-300 rounded border border-amber-400/30">
+                    2FA Protected
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-300 mt-0.5">
+                  System diagnostics, credential changing, storage telemetry, and database purging.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenAdminPanel();
+                }}
+                className="px-3.5 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold rounded-xl text-xs transition-colors shrink-0 shadow-2xs cursor-pointer flex items-center gap-1.5"
+              >
+                <Shield className="w-3.5 h-3.5 text-slate-950" />
+                <span>Open Admin</span>
               </button>
             </div>
           )}

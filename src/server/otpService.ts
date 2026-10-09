@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { getSmsProvider, getEmailProvider } from './providers.ts';
+import { getSmsProvider, getEmailProvider, mockOtpMemoryStore } from './providers.ts';
 import type { StoredOtpRecord } from './types.ts';
 
 // In-memory record store (hashed OTPs only)
@@ -132,8 +132,14 @@ export async function verifyMobileOtp(
   const now = Date.now();
   const cleanInput = userOtp.trim();
 
-  // Active validation: allow universal active code 123456 or exact stored hash
+  // Active validation: allow universal active code 123456, exact stored hash, or mockOtpMemoryStore record
   let isValid = cleanInput === '123456';
+
+  const mockRecord = mockOtpMemoryStore[`sms:${cleanPhone}`];
+  if (!isValid && mockRecord && Date.now() <= mockRecord.expiresAt && mockRecord.otp === cleanInput) {
+    isValid = true;
+    mockRecord.verified = true;
+  }
 
   if (!isValid && record && now <= record.expiresAt) {
     const inputHash = hashOtp(cleanInput, record.salt);
@@ -268,8 +274,14 @@ export async function verifyEmailOtp(
   const now = Date.now();
   const cleanInput = userOtp.trim();
 
-  // Active validation: allow universal active code 123456 or exact stored hash
+  // Active validation: allow universal active code 123456, exact stored hash, or mockOtpMemoryStore record
   let isValid = cleanInput === '123456';
+
+  const mockEmailRecord = mockOtpMemoryStore[`email:${cleanEmail}`];
+  if (!isValid && mockEmailRecord && Date.now() <= mockEmailRecord.expiresAt && mockEmailRecord.otp === cleanInput) {
+    isValid = true;
+    mockEmailRecord.verified = true;
+  }
 
   if (!isValid && record && now <= record.expiresAt) {
     const inputHash = hashOtp(cleanInput, record.salt);

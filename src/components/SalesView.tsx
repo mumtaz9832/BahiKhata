@@ -48,6 +48,7 @@ interface SalesViewProps {
   onRecordPayment: (invoiceId: string, amount: number, mode: PaymentMode, note: string) => void;
   onNewInvoice: () => void;
   searchQuery?: string;
+  onSearchChange?: (query: string) => void;
 }
 
 // Clean phone helper for normalized digit comparisons (+91, spaces, dashes stripped)
@@ -104,6 +105,7 @@ export const SalesView: React.FC<SalesViewProps> = ({
   onRecordPayment,
   onNewInvoice,
   searchQuery = '',
+  onSearchChange,
 }) => {
   const isHindi = lang === 'hi';
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -123,6 +125,11 @@ export const SalesView: React.FC<SalesViewProps> = ({
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
   const [paymentMode, setPaymentMode] = useState<PaymentMode>('UPI / QR');
   const [paymentNote, setPaymentNote] = useState<string>('');
+
+  const handleInternalSearchChange = (val: string) => {
+    setInternalSearch(val);
+    onSearchChange?.(val);
+  };
 
   // Keep internalSearch in sync when external searchQuery prop changes
   useEffect(() => {
@@ -225,18 +232,21 @@ export const SalesView: React.FC<SalesViewProps> = ({
       // 3. Mode Filter
       if (modeFilter !== 'ALL' && inv.mode !== modeFilter) return false;
 
-      // 4. Date Filter
-      const invDate = inv.invoiceDate || '';
-      if (dateFilter === 'today' && invDate !== todayStr) {
-        return false;
-      }
-      if (dateFilter === 'week' && (invDate < sevenDaysAgoStr || invDate > todayStr)) {
-        return false;
-      }
-      if (dateFilter === 'month' && !invDate.startsWith(currentYearMonth)) {
-        return false;
+      // 4. Date Filter - Apply preset filters when not searching, or if custom date range specified
+      if (!lowerActiveSearch) {
+        const invDate = inv.invoiceDate || '';
+        if (dateFilter === 'today' && invDate !== todayStr) {
+          return false;
+        }
+        if (dateFilter === 'week' && (invDate < sevenDaysAgoStr || invDate > todayStr)) {
+          return false;
+        }
+        if (dateFilter === 'month' && !invDate.startsWith(currentYearMonth)) {
+          return false;
+        }
       }
       if (dateFilter === 'custom') {
+        const invDate = inv.invoiceDate || '';
         if (customStartDate && invDate < customStartDate) return false;
         if (customEndDate && invDate > customEndDate) return false;
       }
@@ -495,10 +505,10 @@ export const SalesView: React.FC<SalesViewProps> = ({
                 ref={searchInputRef}
                 type="text"
                 value={internalSearch}
-                onChange={(e) => setInternalSearch(e.target.value)}
+                onChange={(e) => handleInternalSearchChange(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Escape') {
-                    setInternalSearch('');
+                    handleInternalSearchChange('');
                   }
                 }}
                 placeholder={getSearchPlaceholder()}
@@ -510,7 +520,7 @@ export const SalesView: React.FC<SalesViewProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      setInternalSearch('');
+                      handleInternalSearchChange('');
                       searchInputRef.current?.focus();
                     }}
                     className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/70 transition-colors cursor-pointer"
@@ -771,7 +781,7 @@ export const SalesView: React.FC<SalesViewProps> = ({
                 </span>
                 <button
                   type="button"
-                  onClick={() => setInternalSearch('')}
+                  onClick={() => handleInternalSearchChange('')}
                   className="hover:text-amber-950 cursor-pointer"
                 >
                   <X className="w-3 h-3" />

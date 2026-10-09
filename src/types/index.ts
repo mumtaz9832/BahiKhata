@@ -264,6 +264,8 @@ export interface CustomerRecord {
   openingBalance?: number;
   balanceDue?: number;
   notes?: string;
+  partyType?: 'customer' | 'supplier';
+  supplierPayable?: number;
   createdAt: string;
 }
 
@@ -305,5 +307,89 @@ export interface ProductRecord {
   serviceWarranty?: string;
 
   createdAt: string;
+}
+
+export interface StorageStatistics {
+  invoiceCount: number;
+  customerCount: number;
+  productCount: number;
+  businessCount: number;
+  activeBusinessName: string;
+  totalSalesValue: number;
+  totalBalanceDue: number;
+  stockValuation: number;
+  estimatedSizeKb: number;
+  lastBackupDate?: string;
+}
+
+export interface BackupMetadata {
+  invoiceCount: number;
+  customerCount: number;
+  productCount: number;
+  businessCount: number;
+  activeBusinessName: string;
+  totalSalesValue: number;
+  totalBalanceDue: number;
+  stockValuation: number;
+}
+
+export interface BizcoreBackupPayload {
+  format: 'BIZCORE_BACKUP';
+  version: string;
+  app: string;
+  exportedAt: string;
+  notes?: string;
+  metadata: BackupMetadata;
+  data: {
+    profile: BusinessProfile;
+    businesses?: BusinessProfile[];
+    activeBusinessId?: string;
+    invoices: SavedInvoice[];
+    customers: CustomerRecord[];
+    products: ProductRecord[];
+    subscription?: SubscriptionState;
+    language?: AppLanguage;
+  };
+}
+
+export interface BackupInspectionResult {
+  isValid: boolean;
+  error?: string;
+  isLegacy?: boolean;
+  exportedAt?: string;
+  notes?: string;
+  summary: {
+    businessName: string;
+    industryCategory?: string;
+    invoiceCount: number;
+    customerCount: number;
+    productCount: number;
+    businessCount: number;
+    totalSalesValue: number;
+    totalBalanceDue: number;
+    stockValuation: number;
+  };
+  parsedData: {
+    profile?: BusinessProfile;
+    businesses?: BusinessProfile[];
+    activeBusinessId?: string;
+    invoices?: SavedInvoice[];
+    customers?: CustomerRecord[];
+    products?: ProductRecord[];
+    subscription?: SubscriptionState;
+    language?: AppLanguage;
+  };
+}
+
+export interface RestoreResult {
+  success: boolean;
+  error?: string;
+  mode: 'replace' | 'merge';
+  restoredStats: {
+    invoicesRestored: number;
+    customersRestored: number;
+    productsRestored: number;
+    businessesRestored: number;
+  };
 }
 

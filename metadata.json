@@ -1,6 +1,6 @@
 {
-  "name": "BahiKhata Business Suite",
-  "description": "Multi-industry smart billing, weighbridge & scrap recycling, project khata, bulk wholesale, manufacturing BOM, inventory, delivery challans, and GST day book.",
+  "name": "BIZCORE — Complete Business Management Software",
+  "description": "BIZCORE is a professional all-in-one Business Management, Billing, POS, Inventory, GST and Accounting software.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

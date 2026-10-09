@@ -1,5 +1,5 @@
 /**
- * Multi-Industry & Business Model Configuration for BahiKhata
+ * Multi-Industry & Business Model Configuration for BIZCORE
  * Complete catalog of 26 industries, dynamic subcategories,
  * 18 business models, recommended features, and measurement units.
  */

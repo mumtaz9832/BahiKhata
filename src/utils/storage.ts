@@ -6,6 +6,11 @@ import {
   AppLanguage,
   CustomerRecord,
   ProductRecord,
+  BackupMetadata,
+  BizcoreBackupPayload,
+  BackupInspectionResult,
+  RestoreResult,
+  StorageStatistics,
 } from '../types';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
@@ -18,6 +23,8 @@ const STORAGE_KEY_SUBSCRIPTION = 'bahikhata_subscription_v2';
 const STORAGE_KEY_LANGUAGE = 'bahikhata_lang_v2';
 const STORAGE_KEY_CUSTOMERS = 'bahikhata_customers_v2';
 const STORAGE_KEY_PRODUCTS = 'bahikhata_products_v2';
+const STORAGE_KEY_LAST_BACKUP = 'bizcore_last_backup_meta_v1';
+const STORAGE_KEY_SAFETY_SNAPSHOT = 'bizcore_safety_rollback_snapshot_v1';
 
 const IDB_NAME = 'BahiKhata_DB';
 const IDB_VERSION = 1;
@@ -25,9 +32,9 @@ const IDB_STORE = 'keyval_store';
 
 export const DEFAULT_BUSINESS_PROFILE: BusinessProfile = {
   id: 'biz_default',
-  name: 'BahiKhata Business',
-  businessName: 'BahiKhata Business',
-  tagline: 'Smart Multi-Industry Billing, Digital Khata & Business Management',
+  name: 'BIZCORE Business',
+  businessName: 'BIZCORE Business',
+  tagline: 'BIZCORE — Complete Business Management Software',
   industryCategory: 'Scrap & Recycling',
   industryType: 'Scrap & Recycling',
   subcategories: ['Iron Scrap', 'Steel Scrap', 'Aluminium Scrap', 'Copper Scrap'],
@@ -257,13 +264,15 @@ export function getBusinessProfile(): BusinessProfile {
         parsed.gstin === '27AABCU9603R1ZM' ||
         parsed.phone === '+91 98765 43210' ||
         parsed.name === 'Apex Motors & EV Hub' ||
-        parsed.name === 'Vyapar & Zoho Books Dealership'
+        parsed.name === 'Vyapar & Zoho Books Dealership' ||
+        parsed.name === 'BahiKhata Business'
       ) {
         const cleaned: BusinessProfile = {
           ...DEFAULT_BUSINESS_PROFILE,
           name:
             parsed.name === 'Apex Motors & EV Hub' ||
-            parsed.name === 'Vyapar & Zoho Books Dealership'
+            parsed.name === 'Vyapar & Zoho Books Dealership' ||
+            parsed.name === 'BahiKhata Business'
               ? DEFAULT_BUSINESS_PROFILE.name
               : parsed.name,
         };
@@ -276,7 +285,8 @@ export function getBusinessProfile(): BusinessProfile {
       // If user already had custom details or has been onboarded, preserve them and mark registrationCompleted: true
       const hasExistingBusiness =
         Boolean(parsed.phone && parsed.phone !== '+91 98765 43210') ||
-        Boolean(parsed.name && parsed.name !== 'BahiKhata Business') ||
+        Boolean(parsed.name && parsed.name !== 'BahiKhata Business' && parsed.name !== 'BIZCORE Business') ||
+        localStorage.getItem('bizcore_onboarded') === 'true' ||
         localStorage.getItem('bahikhata_onboarded') === 'true';
 
       const merged: BusinessProfile = {
@@ -784,45 +794,618 @@ export function purgeAllFalseData(): void {
   }
 }
 
-export function exportBackupData(): string {
+// --- BIZCORE Manual JSON Backup & Restore Suite ---
+
+export function getStorageStatistics(): StorageStatistics {
   const profile = getBusinessProfile();
   const invoices = getSavedInvoices();
-  const subscription = getSubscriptionState();
   const customers = getSavedCustomers();
   const products = getSavedProducts();
-  return JSON.stringify(
-    { profile, invoices, subscription, customers, products, exportedAt: new Date().toISOString() },
-    null,
-    2
+  const businesses = getAllBusinesses();
+
+  const totalSalesValue = invoices.reduce((sum, inv) => {
+    return (
+      sum +
+      (inv.mode === 'auto_dealer'
+        ? inv.autoData?.pricing?.totalSaleValue || 0
+        : inv.retailData?.grandTotal || 0)
+    );
+  }, 0);
+
+  const totalBalanceDue = invoices.reduce((sum, inv) => {
+    return (
+      sum +
+      (inv.mode === 'auto_dealer'
+        ? inv.autoData?.pricing?.balanceAmount || 0
+        : inv.retailData?.balanceAmount || 0)
+    );
+  }, 0);
+
+  const stockValuation = products.reduce(
+    (sum, p) => sum + (p.rate || 0) * (p.stockQty || 0),
+    0
   );
+
+  let lastBackupDate: string | undefined = undefined;
+  try {
+    const rawMeta = localStorage.getItem(STORAGE_KEY_LAST_BACKUP);
+    if (rawMeta) {
+      const parsed = JSON.parse(rawMeta);
+      lastBackupDate = parsed.exportedAt;
+    }
+  } catch {}
+
+  const payloadString = JSON.stringify({ profile, invoices, customers, products, businesses });
+  const estimatedSizeKb = Math.max(1, Math.round(new Blob([payloadString]).size / 1024));
+
+  return {
+    invoiceCount: invoices.length,
+    customerCount: customers.length,
+    productCount: products.length,
+    businessCount: businesses.length,
+    activeBusinessName: profile.name || profile.businessName || 'BIZCORE Business',
+    totalSalesValue,
+    totalBalanceDue,
+    stockValuation,
+    estimatedSizeKb,
+    lastBackupDate,
+  };
+}
+
+export function generateBackupPayload(notes?: string): BizcoreBackupPayload {
+  const profile = getBusinessProfile();
+  const invoices = getSavedInvoices();
+  const customers = getSavedCustomers();
+  const products = getSavedProducts();
+  const subscription = getSubscriptionState();
+  const businesses = getAllBusinesses();
+  const activeBusinessId = getActiveBusinessId();
+  const language = getLanguagePreference();
+
+  const stats = getStorageStatistics();
+
+  const metadata: BackupMetadata = {
+    invoiceCount: stats.invoiceCount,
+    customerCount: stats.customerCount,
+    productCount: stats.productCount,
+    businessCount: stats.businessCount,
+    activeBusinessName: stats.activeBusinessName,
+    totalSalesValue: stats.totalSalesValue,
+    totalBalanceDue: stats.totalBalanceDue,
+    stockValuation: stats.stockValuation,
+  };
+
+  const exportedAt = new Date().toISOString();
+
+  try {
+    localStorage.setItem(
+      STORAGE_KEY_LAST_BACKUP,
+      JSON.stringify({ exportedAt, invoiceCount: metadata.invoiceCount })
+    );
+  } catch {}
+
+  return {
+    format: 'BIZCORE_BACKUP',
+    version: '2.1',
+    app: 'BIZCORE — Complete Business Management Software',
+    exportedAt,
+    notes: notes?.trim() || undefined,
+    metadata,
+    data: {
+      profile,
+      businesses,
+      activeBusinessId,
+      invoices,
+      customers,
+      products,
+      subscription,
+      language,
+    },
+  };
+}
+
+export function exportBackupData(notes?: string): string {
+  const payload = generateBackupPayload(notes);
+  return JSON.stringify(payload, null, 2);
+}
+
+export function downloadBackupFile(jsonString?: string, customFilename?: string): string {
+  const content = jsonString || exportBackupData();
+  const profile = getBusinessProfile();
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const bizSlug = (profile.name || profile.businessName || 'bizcore')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '-')
+    .replace(/-+/g, '-')
+    .slice(0, 24);
+  const filename = customFilename || `bizcore-backup-${bizSlug}-${dateStr}.json`;
+
+  const blob = new Blob([content], { type: 'application/json;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  return filename;
+}
+
+export function inspectBackupData(jsonString: string): BackupInspectionResult {
+  if (!jsonString || typeof jsonString !== 'string' || !jsonString.trim()) {
+    return {
+      isValid: false,
+      error: 'The provided backup file or text is empty.',
+      summary: {
+        businessName: '',
+        invoiceCount: 0,
+        customerCount: 0,
+        productCount: 0,
+        businessCount: 0,
+        totalSalesValue: 0,
+        totalBalanceDue: 0,
+        stockValuation: 0,
+      },
+      parsedData: {},
+    };
+  }
+
+  try {
+    const parsed = JSON.parse(jsonString);
+
+    // Format A: Modern BIZCORE_BACKUP schema
+    if (parsed && parsed.format === 'BIZCORE_BACKUP' && parsed.data) {
+      const data = parsed.data;
+      const invs = Array.isArray(data.invoices) ? data.invoices : [];
+      const custs = Array.isArray(data.customers) ? data.customers : [];
+      const prods = Array.isArray(data.products) ? data.products : [];
+      const bizs = Array.isArray(data.businesses) ? data.businesses : [];
+      const prof = data.profile || DEFAULT_BUSINESS_PROFILE;
+
+      const salesVal = invs.reduce((sum: number, inv: any) => {
+        return (
+          sum +
+          (inv.mode === 'auto_dealer'
+            ? inv.autoData?.pricing?.totalSaleValue || 0
+            : inv.retailData?.grandTotal || 0)
+        );
+      }, 0);
+
+      const balDue = invs.reduce((sum: number, inv: any) => {
+        return (
+          sum +
+          (inv.mode === 'auto_dealer'
+            ? inv.autoData?.pricing?.balanceAmount || 0
+            : inv.retailData?.balanceAmount || 0)
+        );
+      }, 0);
+
+      const stockVal = prods.reduce(
+        (sum: number, p: any) => sum + (p.rate || 0) * (p.stockQty || 0),
+        0
+      );
+
+      return {
+        isValid: true,
+        isLegacy: false,
+        exportedAt: parsed.exportedAt,
+        notes: parsed.notes,
+        summary: {
+          businessName: prof.name || prof.businessName || 'Business',
+          industryCategory: prof.industryCategory || prof.industryType,
+          invoiceCount: invs.length,
+          customerCount: custs.length,
+          productCount: prods.length,
+          businessCount: bizs.length || 1,
+          totalSalesValue: salesVal,
+          totalBalanceDue: balDue,
+          stockValuation: stockVal,
+        },
+        parsedData: {
+          profile: prof,
+          businesses: bizs.length > 0 ? bizs : [prof],
+          activeBusinessId: data.activeBusinessId || prof.id,
+          invoices: invs,
+          customers: custs,
+          products: prods,
+          subscription: data.subscription,
+          language: data.language,
+        },
+      };
+    }
+
+    // Format B: Legacy or direct flat object { profile, invoices, customers, products, subscription }
+    if (parsed && typeof parsed === 'object') {
+      const invs = Array.isArray(parsed.invoices) ? parsed.invoices : [];
+      const custs = Array.isArray(parsed.customers) ? parsed.customers : [];
+      const prods = Array.isArray(parsed.products) ? parsed.products : [];
+      const prof = parsed.profile;
+      const bizs = Array.isArray(parsed.businesses)
+        ? parsed.businesses
+        : prof
+        ? [prof]
+        : [];
+
+      // Check if it has any recognizable payload
+      if (!prof && invs.length === 0 && custs.length === 0 && prods.length === 0) {
+        return {
+          isValid: false,
+          error:
+            'This JSON does not contain recognized BIZCORE business data (invoices, customers, or items).',
+          summary: {
+            businessName: '',
+            invoiceCount: 0,
+            customerCount: 0,
+            productCount: 0,
+            businessCount: 0,
+            totalSalesValue: 0,
+            totalBalanceDue: 0,
+            stockValuation: 0,
+          },
+          parsedData: {},
+        };
+      }
+
+      const salesVal = invs.reduce((sum: number, inv: any) => {
+        return (
+          sum +
+          (inv.mode === 'auto_dealer'
+            ? inv.autoData?.pricing?.totalSaleValue || 0
+            : inv.retailData?.grandTotal || 0)
+        );
+      }, 0);
+
+      const balDue = invs.reduce((sum: number, inv: any) => {
+        return (
+          sum +
+          (inv.mode === 'auto_dealer'
+            ? inv.autoData?.pricing?.balanceAmount || 0
+            : inv.retailData?.balanceAmount || 0)
+        );
+      }, 0);
+
+      const stockVal = prods.reduce(
+        (sum: number, p: any) => sum + (p.rate || 0) * (p.stockQty || 0),
+        0
+      );
+
+      return {
+        isValid: true,
+        isLegacy: true,
+        exportedAt: parsed.exportedAt || undefined,
+        summary: {
+          businessName: prof?.name || prof?.businessName || 'Legacy Backup',
+          industryCategory: prof?.industryCategory || prof?.industryType,
+          invoiceCount: invs.length,
+          customerCount: custs.length,
+          productCount: prods.length,
+          businessCount: bizs.length || (prof ? 1 : 0),
+          totalSalesValue: salesVal,
+          totalBalanceDue: balDue,
+          stockValuation: stockVal,
+        },
+        parsedData: {
+          profile: prof,
+          businesses: bizs,
+          activeBusinessId: parsed.activeBusinessId || prof?.id,
+          invoices: invs,
+          customers: custs,
+          products: prods,
+          subscription: parsed.subscription,
+          language: parsed.language,
+        },
+      };
+    }
+
+    return {
+      isValid: false,
+      error: 'Invalid JSON structure: Expected a valid BIZCORE backup object.',
+      summary: {
+        businessName: '',
+        invoiceCount: 0,
+        customerCount: 0,
+        productCount: 0,
+        businessCount: 0,
+        totalSalesValue: 0,
+        totalBalanceDue: 0,
+        stockValuation: 0,
+      },
+      parsedData: {},
+    };
+  } catch (err: any) {
+    return {
+      isValid: false,
+      error: `Malformed JSON file: ${err?.message || 'Unable to parse JSON syntax'}`,
+      summary: {
+        businessName: '',
+        invoiceCount: 0,
+        customerCount: 0,
+        productCount: 0,
+        businessCount: 0,
+        totalSalesValue: 0,
+        totalBalanceDue: 0,
+        stockValuation: 0,
+      },
+      parsedData: {},
+    };
+  }
+}
+
+export function restoreBackupData(
+  jsonString: string,
+  options: { mode?: 'replace' | 'merge'; createSafetySnapshot?: boolean } = {}
+): RestoreResult {
+  const mode = options.mode || 'replace';
+  const createSafetySnapshot = options.createSafetySnapshot !== false;
+
+  const inspection = inspectBackupData(jsonString);
+  if (!inspection.isValid || !inspection.parsedData) {
+    return {
+      success: false,
+      error: inspection.error || 'Failed to parse and validate backup data.',
+      mode,
+      restoredStats: {
+        invoicesRestored: 0,
+        customersRestored: 0,
+        productsRestored: 0,
+        businessesRestored: 0,
+      },
+    };
+  }
+
+  // 1. Create a safety rollback snapshot of the current local state before applying changes
+  if (createSafetySnapshot) {
+    try {
+      const currentBackup = exportBackupData('Auto safety snapshot created prior to restore');
+      const snapshotMeta = {
+        timestamp: new Date().toISOString(),
+        summary: getStorageStatistics(),
+        rawJson: currentBackup,
+      };
+      localStorage.setItem(STORAGE_KEY_SAFETY_SNAPSHOT, JSON.stringify(snapshotMeta));
+    } catch (err) {
+      console.warn('Unable to write safety rollback snapshot:', err);
+    }
+  }
+
+  const { parsedData } = inspection;
+
+  try {
+    if (mode === 'replace') {
+      // Clean Full Overwrite
+      if (parsedData.profile) {
+        saveBusinessProfile(parsedData.profile);
+      }
+      if (Array.isArray(parsedData.businesses) && parsedData.businesses.length > 0) {
+        localStorage.setItem(STORAGE_KEY_BUSINESSES, JSON.stringify(parsedData.businesses));
+        idbSet(STORAGE_KEY_BUSINESSES, parsedData.businesses);
+      }
+      if (parsedData.activeBusinessId) {
+        localStorage.setItem(STORAGE_KEY_ACTIVE_BIZ_ID, parsedData.activeBusinessId);
+      }
+
+      if (Array.isArray(parsedData.invoices)) {
+        memoryInvoices = parsedData.invoices;
+        localStorage.setItem(STORAGE_KEY_INVOICES, JSON.stringify(parsedData.invoices));
+        idbSet(STORAGE_KEY_INVOICES, parsedData.invoices);
+      }
+
+      if (Array.isArray(parsedData.customers)) {
+        memoryCustomers = parsedData.customers;
+        localStorage.setItem(STORAGE_KEY_CUSTOMERS, JSON.stringify(parsedData.customers));
+        idbSet(STORAGE_KEY_CUSTOMERS, parsedData.customers);
+      }
+
+      if (Array.isArray(parsedData.products)) {
+        memoryProducts = parsedData.products;
+        localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(parsedData.products));
+        idbSet(STORAGE_KEY_PRODUCTS, parsedData.products);
+      }
+
+      if (parsedData.subscription) {
+        saveSubscriptionState(parsedData.subscription);
+      }
+
+      if (parsedData.language) {
+        saveLanguagePreference(parsedData.language);
+      }
+    } else {
+      // Merge & Append Mode
+      if (parsedData.profile) {
+        const currentProf = getBusinessProfile();
+        const mergedProf: BusinessProfile = {
+          ...parsedData.profile,
+          ...currentProf,
+          name:
+            currentProf.name !== 'BIZCORE Business'
+              ? currentProf.name
+              : parsedData.profile.name || currentProf.name,
+        };
+        saveBusinessProfile(mergedProf);
+      }
+
+      // Merge Invoices by ID
+      const existingInvoices = getSavedInvoices();
+      const existingInvMap = new Map(existingInvoices.map((inv) => [inv.id, inv]));
+      (parsedData.invoices || []).forEach((inv) => {
+        if (!existingInvMap.has(inv.id)) {
+          existingInvMap.set(inv.id, inv);
+        }
+      });
+      const mergedInvoices = Array.from(existingInvMap.values());
+      memoryInvoices = mergedInvoices;
+      localStorage.setItem(STORAGE_KEY_INVOICES, JSON.stringify(mergedInvoices));
+      idbSet(STORAGE_KEY_INVOICES, mergedInvoices);
+
+      // Merge Customers by ID or clean phone
+      const existingCustomers = getSavedCustomers();
+      const existingCustMap = new Map(existingCustomers.map((c) => [c.id, c]));
+      const phoneMap = new Map(
+        existingCustomers
+          .filter((c) => c.phone)
+          .map((c) => [c.phone.replace(/\D/g, '').slice(-10), c])
+      );
+      (parsedData.customers || []).forEach((c) => {
+        const cleanP = c.phone ? c.phone.replace(/\D/g, '').slice(-10) : '';
+        if (existingCustMap.has(c.id)) {
+          const prev = existingCustMap.get(c.id)!;
+          existingCustMap.set(c.id, {
+            ...c,
+            ...prev,
+            balanceDue: (prev.balanceDue || 0) || (c.balanceDue || 0),
+          });
+        } else if (cleanP && phoneMap.has(cleanP)) {
+          const prev = phoneMap.get(cleanP)!;
+          existingCustMap.set(prev.id, { ...c, ...prev });
+        } else {
+          existingCustMap.set(c.id, c);
+        }
+      });
+      const mergedCustomers = Array.from(existingCustMap.values());
+      memoryCustomers = mergedCustomers;
+      localStorage.setItem(STORAGE_KEY_CUSTOMERS, JSON.stringify(mergedCustomers));
+      idbSet(STORAGE_KEY_CUSTOMERS, mergedCustomers);
+
+      // Merge Products by ID or SKU/name
+      const existingProducts = getSavedProducts();
+      const existingProdMap = new Map(existingProducts.map((p) => [p.id, p]));
+      const skuMap = new Map(
+        existingProducts
+          .filter((p) => p.sku)
+          .map((p) => [p.sku!.toLowerCase(), p])
+      );
+      (parsedData.products || []).forEach((p) => {
+        const cleanSku = p.sku?.toLowerCase();
+        if (existingProdMap.has(p.id)) {
+          const prev = existingProdMap.get(p.id)!;
+          existingProdMap.set(p.id, {
+            ...p,
+            ...prev,
+            stockQty: prev.stockQty !== undefined ? prev.stockQty : p.stockQty,
+          });
+        } else if (cleanSku && skuMap.has(cleanSku)) {
+          const prev = skuMap.get(cleanSku)!;
+          existingProdMap.set(prev.id, { ...p, ...prev });
+        } else {
+          existingProdMap.set(p.id, p);
+        }
+      });
+      const mergedProducts = Array.from(existingProdMap.values());
+      memoryProducts = mergedProducts;
+      localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(mergedProducts));
+      idbSet(STORAGE_KEY_PRODUCTS, mergedProducts);
+
+      // Merge businesses list
+      const existingBizs = getAllBusinesses();
+      const bizMap = new Map(existingBizs.map((b) => [b.id, b]));
+      (parsedData.businesses || []).forEach((b) => {
+        if (!bizMap.has(b.id)) {
+          bizMap.set(b.id, b);
+        }
+      });
+      const mergedBizs = Array.from(bizMap.values());
+      localStorage.setItem(STORAGE_KEY_BUSINESSES, JSON.stringify(mergedBizs));
+      idbSet(STORAGE_KEY_BUSINESSES, mergedBizs);
+    }
+
+    // Ensure session markers are active
+    localStorage.setItem('bizcore_authenticated', 'true');
+    localStorage.setItem('bahikhata_authenticated', 'true');
+    localStorage.removeItem('bizcore_guest_mode');
+    localStorage.removeItem('bahikhata_guest_mode');
+
+    // Dispatch custom event so any active views or components can instantly refresh
+    try {
+      window.dispatchEvent(
+        new CustomEvent('bizcore:data-restored', {
+          detail: {
+            mode,
+            restoredStats: {
+              invoicesRestored: parsedData.invoices?.length || 0,
+              customersRestored: parsedData.customers?.length || 0,
+              productsRestored: parsedData.products?.length || 0,
+              businessesRestored: parsedData.businesses?.length || 1,
+            },
+          },
+        })
+      );
+    } catch {}
+
+    return {
+      success: true,
+      mode,
+      restoredStats: {
+        invoicesRestored: parsedData.invoices?.length || 0,
+        customersRestored: parsedData.customers?.length || 0,
+        productsRestored: parsedData.products?.length || 0,
+        businessesRestored: parsedData.businesses?.length || 1,
+      },
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: `Storage write failure: ${err?.message || 'Unknown error'}`,
+      mode,
+      restoredStats: {
+        invoicesRestored: 0,
+        customersRestored: 0,
+        productsRestored: 0,
+        businessesRestored: 0,
+      },
+    };
+  }
+}
+
+export function getSafetyRollbackSnapshot(): {
+  timestamp: string;
+  summary: any;
+  rawJson: string;
+} | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_SAFETY_SNAPSHOT);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+export function rollbackToSafetySnapshot(): RestoreResult {
+  const snapshot = getSafetyRollbackSnapshot();
+  if (!snapshot || !snapshot.rawJson) {
+    return {
+      success: false,
+      error: 'No safety rollback snapshot available.',
+      mode: 'replace',
+      restoredStats: {
+        invoicesRestored: 0,
+        customersRestored: 0,
+        productsRestored: 0,
+        businessesRestored: 0,
+      },
+    };
+  }
+  const res = restoreBackupData(snapshot.rawJson, {
+    mode: 'replace',
+    createSafetySnapshot: false,
+  });
+  if (res.success) {
+    try {
+      localStorage.removeItem(STORAGE_KEY_SAFETY_SNAPSHOT);
+    } catch {}
+  }
+  return res;
+}
+
+export function clearSafetyRollbackSnapshot(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEY_SAFETY_SNAPSHOT);
+  } catch {}
 }
 
 export function importBackupData(jsonString: string): boolean {
-  try {
-    const parsed = JSON.parse(jsonString);
-    if (parsed.profile) saveBusinessProfile(parsed.profile);
-    if (Array.isArray(parsed.invoices)) {
-      memoryInvoices = parsed.invoices;
-      localStorage.setItem(STORAGE_KEY_INVOICES, JSON.stringify(parsed.invoices));
-      idbSet(STORAGE_KEY_INVOICES, parsed.invoices);
-    }
-    if (Array.isArray(parsed.customers)) {
-      memoryCustomers = parsed.customers;
-      localStorage.setItem(STORAGE_KEY_CUSTOMERS, JSON.stringify(parsed.customers));
-      idbSet(STORAGE_KEY_CUSTOMERS, parsed.customers);
-    }
-    if (Array.isArray(parsed.products)) {
-      memoryProducts = parsed.products;
-      localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(parsed.products));
-      idbSet(STORAGE_KEY_PRODUCTS, parsed.products);
-    }
-    if (parsed.subscription) {
-      saveSubscriptionState(parsed.subscription);
-    }
-    return true;
-  } catch {
-    return false;
-  }
+  return restoreBackupData(jsonString, { mode: 'replace' }).success;
 }
 
 /**
