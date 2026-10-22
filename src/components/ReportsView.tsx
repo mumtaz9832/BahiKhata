@@ -12,8 +12,18 @@ import {
   CheckCircle2,
   TrendingUp,
   Users,
+  Wallet,
+  ShoppingBag,
+  ArrowDownRight,
+  ArrowUpRight,
+  AlertTriangle,
 } from 'lucide-react';
 import { SalesPerformanceChart } from './SalesPerformanceChart';
+import {
+  getSavedExpenses,
+  getSavedPurchases,
+  getSavedProducts,
+} from '../utils/storage';
 
 interface ReportsViewProps {
   invoices: SavedInvoice[];
@@ -98,6 +108,58 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
 
   const cgst = totalGstCollected / 2;
   const sgst = totalGstCollected / 2;
+
+  // Real Accounting Integrations: Purchases, Expenses, Inventory
+  const allExpenses = getSavedExpenses();
+  const allPurchases = getSavedPurchases();
+  const allProducts = getSavedProducts();
+
+  const filteredExpenses = allExpenses.filter((e) => {
+    if (selectedRange === 'TODAY') return e.date === todayStr;
+    if (selectedRange === 'THIS_MONTH') return e.date && e.date.startsWith(currentMonthStr);
+    return true;
+  });
+
+  const filteredPurchases = allPurchases.filter((p) => {
+    if (selectedRange === 'TODAY') return p.date === todayStr;
+    if (selectedRange === 'THIS_MONTH') return p.date && p.date.startsWith(currentMonthStr);
+    return true;
+  });
+
+  const totalExpenseAmount = filteredExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+  const totalPurchaseAmount = filteredPurchases.reduce((sum, p) => sum + (p.grandTotal || 0), 0);
+
+  // Cost of Goods Sold (COGS) based on actual product purchase prices or estimated acquisition cost
+  let cogs = 0;
+  filteredInvoices.forEach((inv) => {
+    if (inv.mode === 'general_retail' && inv.retailData?.items) {
+      inv.retailData.items.forEach((item) => {
+        const prod = allProducts.find(
+          (p) =>
+            p.id === item.id ||
+            (p.name && item.description && p.name.toLowerCase() === item.description.toLowerCase())
+        );
+        const costPerUnit = prod?.purchasePrice || (item.rate * 0.7);
+        cogs += costPerUnit * item.qty;
+      });
+    } else if (inv.mode === 'auto_dealer' && inv.autoData) {
+      const base = inv.autoData.pricing.basePrice || 0;
+      cogs += base * 0.85;
+    }
+  });
+
+  const grossProfit = Math.max(0, totalGross - cogs);
+  const netProfit = grossProfit - totalExpenseAmount;
+
+  // Outstanding Receivables and Payables
+  const totalCustomerReceivables = customers.reduce((sum, c) => sum + (c.balanceDue || 0), 0);
+  const totalSupplierPayables = customers
+    .filter((c) => c.partyType === 'supplier')
+    .reduce((sum, c) => sum + (c.supplierPayable || 0), 0);
+
+  // Stock Valuation and Low Stock Count
+  const totalStockValuation = allProducts.reduce((sum, p) => sum + (p.rate || 0) * (p.stockQty || 0), 0);
+  const lowStockCount = allProducts.filter((p) => (p.stockQty || 0) <= (p.minStockAlert || 2)).length;
 
   // Helper to safely escape CSV cells and protect against formula injection
   const escapeCsv = (val: any): string => {
@@ -469,6 +531,130 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
             <span className="text-xl font-black text-amber-900">
               ₹{Math.round(totalGstCollected).toLocaleString('en-IN')}
             </span>
+          </div>
+        </div>
+      </div>
+
+      {/* 5. Real Profit & Loss Statement (Gross Profit vs Operating Expenses vs Net Profit) */}
+      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-6 space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+          <div>
+            <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-emerald-600" />
+              <span>{isHindi ? 'लाभ व हानि विवरण (P&L Summary)' : 'Profit & Loss Statement (P&L)'}</span>
+            </h3>
+            <p className="text-xs text-slate-500">
+              {isHindi
+                ? 'वास्तविक लेन-देन: सकल लाभ = बिक्री - खरीद लागत, शुद्ध लाभ = सकल लाभ - संचालन खर्च'
+                : 'Audited Formula: Gross Profit = Sales - Cost of Goods Sold. Net Profit = Gross Profit - Operating Expenses.'}
+            </p>
+          </div>
+          <span
+            className={`px-3 py-1 text-xs font-bold rounded-lg border ${
+              netProfit >= 0
+                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                : 'bg-red-50 text-red-800 border-red-200'
+            }`}
+          >
+            {netProfit >= 0 ? (isHindi ? 'शुद्ध लाभ (Net Profit)' : 'Net Profit Active') : (isHindi ? 'शुद्ध हानि (Net Loss)' : 'Net Loss')}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
+          <div className="p-4 rounded-xl bg-emerald-50/50 border border-emerald-200/80">
+            <span className="text-[10px] uppercase font-bold text-emerald-800 block mb-1">
+              {isHindi ? 'सकल लाभ (Gross Profit)' : 'Gross Profit'}
+            </span>
+            <span className="text-xl font-black text-emerald-950">
+              ₹{Math.round(grossProfit).toLocaleString('en-IN')}
+            </span>
+            <span className="text-[10px] text-emerald-700 block mt-1">
+              Sales (₹{Math.round(totalGross).toLocaleString('en-IN')}) - COGS
+            </span>
+          </div>
+
+          <div className="p-4 rounded-xl bg-rose-50/50 border border-rose-200/80">
+            <span className="text-[10px] uppercase font-bold text-rose-800 block mb-1">
+              {isHindi ? 'संचालन खर्च (Expenses)' : 'Operating Expenses'}
+            </span>
+            <span className="text-xl font-black text-rose-950">
+              ₹{Math.round(totalExpenseAmount).toLocaleString('en-IN')}
+            </span>
+            <span className="text-[10px] text-rose-700 block mt-1">
+              {filteredExpenses.length} recorded expense vouchers
+            </span>
+          </div>
+
+          <div className="p-4 rounded-xl bg-blue-50/50 border border-blue-200/80">
+            <span className="text-[10px] uppercase font-bold text-blue-800 block mb-1">
+              {isHindi ? 'कुल माल खरीद (Purchases)' : 'Total Purchases'}
+            </span>
+            <span className="text-xl font-black text-blue-950">
+              ₹{Math.round(totalPurchaseAmount).toLocaleString('en-IN')}
+            </span>
+            <span className="text-[10px] text-blue-700 block mt-1">
+              {filteredPurchases.length} inward stock bills
+            </span>
+          </div>
+
+          <div className={`p-4 rounded-xl border ${netProfit >= 0 ? 'bg-emerald-100/40 border-emerald-300' : 'bg-red-100/40 border-red-300'}`}>
+            <span className={`text-[10px] uppercase font-bold block mb-1 ${netProfit >= 0 ? 'text-emerald-900' : 'text-red-900'}`}>
+              {isHindi ? 'वास्तविक शुद्ध लाभ (Net Profit)' : 'Real Net Profit'}
+            </span>
+            <span className={`text-xl font-black ${netProfit >= 0 ? 'text-emerald-950' : 'text-red-950'}`}>
+              ₹{Math.round(netProfit).toLocaleString('en-IN')}
+            </span>
+            <span className={`text-[10px] block mt-1 ${netProfit >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+              Gross Profit - Operating Expenses
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* 6. Outstanding Receivables & Payables + Stock Valuation */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-white p-4.5 rounded-2xl border border-amber-200/80 bg-amber-50/20 shadow-2xs">
+          <div className="text-[11px] font-bold uppercase tracking-wider text-amber-700 mb-1 flex items-center justify-between">
+            <span>{isHindi ? 'ग्राहकों से उधारी (Receivables)' : 'Customer Outstanding Dues'}</span>
+            <ArrowDownRight className="w-4 h-4 text-amber-600" />
+          </div>
+          <div className="text-2xl font-black text-amber-900">
+            ₹{totalCustomerReceivables.toLocaleString('en-IN')}
+          </div>
+          <div className="text-[11px] text-amber-700 mt-0.5">
+            {customers.filter((c) => (c.balanceDue || 0) > 0).length} parties with pending balance
+          </div>
+        </div>
+
+        <div className="bg-white p-4.5 rounded-2xl border border-indigo-200/80 bg-indigo-50/20 shadow-2xs">
+          <div className="text-[11px] font-bold uppercase tracking-wider text-indigo-700 mb-1 flex items-center justify-between">
+            <span>{isHindi ? 'सप्लायर को देय (Payables)' : 'Supplier Outstanding Dues'}</span>
+            <ArrowUpRight className="w-4 h-4 text-indigo-600" />
+          </div>
+          <div className="text-2xl font-black text-indigo-900">
+            ₹{totalSupplierPayables.toLocaleString('en-IN')}
+          </div>
+          <div className="text-[11px] text-indigo-700 mt-0.5">
+            Total payables on credit purchases
+          </div>
+        </div>
+
+        <div className="bg-white p-4.5 rounded-2xl border border-slate-200/90 shadow-2xs">
+          <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1 flex items-center justify-between">
+            <span>{isHindi ? 'कुल स्टॉक मूल्यांकन' : 'Current Stock Valuation'}</span>
+            <ShoppingBag className="w-4 h-4 text-slate-500" />
+          </div>
+          <div className="text-2xl font-black text-slate-900">
+            ₹{totalStockValuation.toLocaleString('en-IN')}
+          </div>
+          <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1.5">
+            <span>{allProducts.length} items</span>
+            {lowStockCount > 0 && (
+              <span className="text-rose-600 font-bold flex items-center gap-0.5">
+                <AlertTriangle className="w-3 h-3" />
+                {lowStockCount} low stock alerts
+              </span>
+            )}
           </div>
         </div>
       </div>

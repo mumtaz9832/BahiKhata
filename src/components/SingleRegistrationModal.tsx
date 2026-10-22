@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   X,
   User,
@@ -10,10 +10,12 @@ import {
   CheckCircle2,
   AlertCircle,
   ArrowRight,
-  RotateCcw,
   ShieldCheck,
   Check,
   Loader2,
+  ShoppingBag,
+  Wrench,
+  Search,
 } from 'lucide-react';
 import { BizcoreLogo } from './BizcoreLogo';
 import { BusinessProfile } from '../types';
@@ -23,15 +25,34 @@ import {
   requestEmailOtp,
   submitEmailOtp,
 } from '../services/otpClient';
+import {
+  BUSINESS_MAIN_CATEGORIES,
+  BusinessMainCategory,
+  SALES_SUBCATEGORIES,
+  SERVICE_SUBCATEGORIES,
+  isValidCategory,
+  isValidSubcategory,
+  validateName,
+  validateMobileNumber,
+  validateEmail,
+  validateAddress,
+  validateBusinessName,
+  validateGSTIN,
+} from '../config/categories';
 
 export interface RegistrationData {
   userId?: string;
+  name: string;
   fullName: string;
   mobileNumber: string;
   email: string;
-  businessName: string;
+  address: string;
   businessAddress: string;
+  businessName: string;
+  gstin?: string;
   gstNumber?: string;
+  category: BusinessMainCategory;
+  subcategory: string;
   mobileVerified: boolean;
   emailVerified: boolean;
   mobileVerificationToken?: string;
@@ -64,7 +85,7 @@ export const SingleRegistrationModal: React.FC<SingleRegistrationModalProps> = (
   isGoogleAuthenticated = false,
   canCancel = false,
 }) => {
-  // Helpers to resolve initial values cleanly (all empty on fresh registration)
+  // Resolve initial state cleanly
   const isEditingSavedProfile = Boolean(
     initialProfile?.registrationCompleted &&
     initialProfile?.name &&
@@ -72,43 +93,64 @@ export const SingleRegistrationModal: React.FC<SingleRegistrationModalProps> = (
     initialProfile.name !== 'BahiKhata Business'
   );
 
-  const getInitialFullName = () => {
+  // 1. Name
+  const [name, setName] = useState<string>(() => {
     if (isEditingSavedProfile) return initialProfile?.fullName || '';
-    return '';
-  };
+    return initialUser?.displayName || '';
+  });
 
-  const getInitialMobile = () => {
+  // 2. Mobile Number
+  const [mobileNumber, setMobileNumber] = useState<string>(() => {
     if (isEditingSavedProfile) return initialProfile?.mobileNumber || initialProfile?.phone || '';
-    return '';
-  };
+    return initialUser?.phoneNumber ? initialUser.phoneNumber.replace(/\D/g, '').slice(-10) : '';
+  });
 
-  const getInitialEmail = () => {
+  // 3. Email ID
+  const [email, setEmail] = useState<string>(() => {
     if (isEditingSavedProfile) return initialProfile?.email || '';
-    return '';
-  };
+    return initialUser?.email || '';
+  });
 
-  const getInitialBusinessName = () => {
-    if (isEditingSavedProfile) return initialProfile?.businessName || initialProfile?.name || '';
-    return '';
-  };
-
-  const getInitialBusinessAddress = () => {
+  // 4. Address
+  const [address, setAddress] = useState<string>(() => {
     if (isEditingSavedProfile) return initialProfile?.businessAddress || initialProfile?.address || '';
     return '';
-  };
+  });
 
-  const getInitialGst = () => {
-    if (isEditingSavedProfile) return initialProfile?.gstNumber || initialProfile?.gstin || '';
+  // 5. Business Name
+  const [businessName, setBusinessName] = useState<string>(() => {
+    if (isEditingSavedProfile) return initialProfile?.businessName || initialProfile?.name || '';
     return '';
-  };
+  });
 
-  // Form fields in exact required order
-  const [fullName, setFullName] = useState<string>(getInitialFullName);
-  const [mobileNumber, setMobileNumber] = useState<string>(getInitialMobile);
-  const [email, setEmail] = useState<string>(getInitialEmail);
-  const [businessName, setBusinessName] = useState<string>(getInitialBusinessName);
-  const [businessAddress, setBusinessAddress] = useState<string>(getInitialBusinessAddress);
-  const [gstNumber, setGstNumber] = useState<string>(getInitialGst);
+  // 6. GSTIN (Optional)
+  const [gstin, setGstin] = useState<string>(() => {
+    if (isEditingSavedProfile) return initialProfile?.gstin || initialProfile?.gstNumber || '';
+    return '';
+  });
+
+  // 7. Category (Sales | Service)
+  const [category, setCategory] = useState<BusinessMainCategory>(() => {
+    if (initialProfile?.category === 'Sales' || initialProfile?.category === 'Service') {
+      return initialProfile.category;
+    }
+    if (initialProfile?.businessType === 'service') return 'Service';
+    return 'Sales';
+  });
+
+  // 8. Subcategory (strictly belonging to selected Category)
+  const [subcategory, setSubcategory] = useState<string>(() => {
+    if (initialProfile?.subcategory) {
+      const cat = initialProfile.category || 'Sales';
+      if (isValidSubcategory(cat, initialProfile.subcategory)) {
+        return initialProfile.subcategory;
+      }
+    }
+    return '';
+  });
+
+  // Subcategory search filter query inside modal dropdown
+  const [subcategorySearch, setSubcategorySearch] = useState<string>('');
 
   // Mobile OTP States
   const [mobileOtpSent, setMobileOtpSent] = useState<boolean>(false);
@@ -116,268 +158,259 @@ export const SingleRegistrationModal: React.FC<SingleRegistrationModalProps> = (
   const [mobileVerified, setMobileVerified] = useState<boolean>(false);
   const [mobileVerificationToken, setMobileVerificationToken] = useState<string | undefined>();
   const [mobileTimer, setMobileTimer] = useState<number>(0);
-  const [mobileAttempts, setMobileAttempts] = useState<number>(0);
   const [mobileError, setMobileError] = useState<string | null>(null);
   const [isMobileSending, setIsMobileSending] = useState<boolean>(false);
   const [isMobileVerifying, setIsMobileVerifying] = useState<boolean>(false);
-
-  // Email OTP States
-  const [emailOtpSent, setEmailOtpSent] = useState<boolean>(false);
-  const [emailOtpInput, setEmailOtpInput] = useState<string>('');
-  // If user signed in via Google, their Gmail is already verified!
-  const [emailVerified, setEmailVerified] = useState<boolean>(
-    Boolean(isGoogleAuthenticated && (initialUser?.email || initialProfile?.email))
-  );
-  const [emailVerificationToken, setEmailVerificationToken] = useState<string | undefined>();
-  const [emailTimer, setEmailTimer] = useState<number>(0);
-  const [emailAttempts, setEmailAttempts] = useState<number>(0);
-  const [emailError, setEmailError] = useState<string | null>(null);
-  const [isEmailSending, setIsEmailSending] = useState<boolean>(false);
-  const [isEmailVerifying, setIsEmailVerifying] = useState<boolean>(false);
-
-  // Active Demo Codes for 100% active verification
   const [activeMobileDemoCode, setActiveMobileDemoCode] = useState<string>('');
-  const [activeEmailDemoCode, setActiveEmailDemoCode] = useState<string>('');
 
-  // Form level error / GST error
-  const [gstError, setGstError] = useState<string | null>(null);
+  // Email verification (if authenticated via Google, automatically verified)
+  const [emailVerified, setEmailVerified] = useState<boolean>(Boolean(isGoogleAuthenticated && (initialUser?.email || email)));
+  const [emailVerificationToken, setEmailVerificationToken] = useState<string | undefined>();
 
-  // Sync Google user details if provided
+  // Validation Error messages
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [generalError, setGeneralError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
+  // Sync Google user details when available
   useEffect(() => {
     if (initialUser) {
-      if (initialUser.displayName && !fullName) {
-        setFullName(initialUser.displayName);
+      if (initialUser.displayName && !name) {
+        setName(initialUser.displayName);
       }
       if (initialUser.email) {
         if (!email) setEmail(initialUser.email);
-        if (isGoogleAuthenticated) {
-          setEmailVerified(true);
-        }
+        if (isGoogleAuthenticated) setEmailVerified(true);
       }
       if (initialUser.phoneNumber && !mobileNumber) {
-        setMobileNumber(initialUser.phoneNumber);
+        setMobileNumber(initialUser.phoneNumber.replace(/\D/g, '').slice(-10));
       }
-    }
-    if (isGoogleAuthenticated && (initialUser?.email || email)) {
-      setEmailVerified(true);
     }
   }, [initialUser, isGoogleAuthenticated]);
 
   // Mobile Timer countdown
   useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (mobileTimer > 0) {
-      interval = setInterval(() => {
-        setMobileTimer((prev) => prev - 1);
-      }, 1000);
-    }
+    if (mobileTimer <= 0) return;
+    const interval = setInterval(() => setMobileTimer((prev) => prev - 1), 1000);
     return () => clearInterval(interval);
   }, [mobileTimer]);
 
-  // Email Timer countdown
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (emailTimer > 0) {
-      interval = setInterval(() => {
-        setEmailTimer((prev) => prev - 1);
-      }, 1000);
+  // When main category changes: clear the previous subcategory and reset search
+  const handleCategoryChange = (newCategory: BusinessMainCategory) => {
+    if (newCategory !== category) {
+      setCategory(newCategory);
+      setSubcategory(''); // Requirement: Clear the previous subcategory when the main category changes
+      setSubcategorySearch('');
+      setFieldErrors((prev) => {
+        const next = { ...prev };
+        delete next.category;
+        delete next.subcategory;
+        return next;
+      });
     }
-    return () => clearInterval(interval);
-  }, [emailTimer]);
-
-  if (!isOpen) return null;
-
-  // Masking helpers
-  const maskMobile = (phoneStr: string) => {
-    const digits = phoneStr.replace(/\D/g, '');
-    if (digits.length <= 4) return phoneStr;
-    const last4 = digits.slice(-4);
-    return `+91 XXXXX ${last4}`;
   };
 
-  const maskEmail = (emailStr: string) => {
-    const parts = emailStr.split('@');
-    if (parts.length !== 2) return emailStr;
-    const userPart = parts[0];
-    const domain = parts[1];
-    if (userPart.length <= 2) return `${userPart.charAt(0)}****@${domain}`;
-    return `${userPart.charAt(0)}****${userPart.charAt(userPart.length - 1)}@${domain}`;
-  };
+  // Subcategories available for active Category
+  const availableSubcategories = useMemo(() => {
+    return category === 'Sales' ? SALES_SUBCATEGORIES : SERVICE_SUBCATEGORIES;
+  }, [category]);
 
-  // Send Mobile OTP via real server-side API
+  const filteredSubcategories = useMemo(() => {
+    const q = subcategorySearch.trim().toLowerCase();
+    if (!q) return availableSubcategories;
+    return availableSubcategories.filter((s) => s.toLowerCase().includes(q));
+  }, [availableSubcategories, subcategorySearch]);
+
+  // Mobile OTP Handler
   const handleSendMobileOtp = async () => {
-    const cleanDigits = mobileNumber.replace(/\D/g, '');
-    if (cleanDigits.length < 10) {
-      setMobileError('Please enter a valid 10-digit mobile number.');
+    const mobileCheck = validateMobileNumber(mobileNumber);
+    if (!mobileCheck.valid) {
+      setMobileError(mobileCheck.error || 'Please enter a valid 10-digit mobile number.');
       return;
     }
+
     setMobileError(null);
     setIsMobileSending(true);
 
     try {
-      const res = await requestMobileOtp(mobileNumber);
-      setMobileOtpSent(true);
-      setMobileTimer(res.resendCooldown || 10);
-      const code = res.demoCode || '123456';
-      setActiveMobileDemoCode(code);
-      setMobileOtpInput(code);
-    } catch {
-      setMobileOtpSent(true);
-      setMobileTimer(10);
-      setActiveMobileDemoCode('123456');
-      setMobileOtpInput('123456');
-    } finally {
+      const res = await requestMobileOtp(mobileCheck.normalized);
       setIsMobileSending(false);
+      if (res.success) {
+        setMobileOtpSent(true);
+        setMobileTimer(res.resendCooldown || 30);
+        if (res.demoCode) {
+          setActiveMobileDemoCode(res.demoCode);
+          setMobileOtpInput(res.demoCode);
+        }
+      } else {
+        setMobileError(res.error || 'Failed to send OTP.');
+      }
+    } catch (err: any) {
+      setIsMobileSending(false);
+      setMobileError(err?.message || 'Network error sending OTP.');
     }
   };
 
-  const handleInstantVerifyMobile = () => {
-    setMobileVerified(true);
-    setMobileOtpSent(true);
-    setMobileVerificationToken(`tok_m_instant_${Date.now()}`);
-    setMobileError(null);
-  };
-
-  // Verify Mobile OTP via real server-side API
   const handleVerifyMobileOtp = async () => {
-    const code = mobileOtpInput.trim() || activeMobileDemoCode || '123456';
+    const mobileCheck = validateMobileNumber(mobileNumber);
+    const code = mobileOtpInput.trim();
+    if (!code || code.length < 6) {
+      setMobileError('Please enter the 6-digit verification code.');
+      return;
+    }
+
     setMobileError(null);
     setIsMobileVerifying(true);
 
     try {
-      const res = await submitMobileOtp(mobileNumber, code);
-      if (res.success || code === '123456' || code === activeMobileDemoCode) {
-        setMobileVerified(true);
-        setMobileVerificationToken(res.verificationToken || `tok_m_${Date.now()}`);
-        setMobileError(null);
-      } else {
-        setMobileAttempts((prev) => prev + 1);
-        setMobileError(res.error || 'Invalid OTP. Please try again.');
-      }
-    } catch {
-      setMobileVerified(true);
-      setMobileVerificationToken(`tok_m_auto_${Date.now()}`);
-      setMobileError(null);
-    } finally {
+      const res = await submitMobileOtp(mobileCheck.normalized, code);
       setIsMobileVerifying(false);
-    }
-  };
-
-  // Send Email OTP via real server-side API
-  const handleSendEmailOtp = async () => {
-    const targetEmail = email.trim() || 'business@bizcore.app';
-    setEmailError(null);
-    setIsEmailSending(true);
-
-    try {
-      const res = await requestEmailOtp(targetEmail);
-      setEmailOtpSent(true);
-      setEmailTimer(res.resendCooldown || 10);
-      const code = res.demoCode || '123456';
-      setActiveEmailDemoCode(code);
-      setEmailOtpInput(code);
-    } catch {
-      setEmailOtpSent(true);
-      setEmailTimer(10);
-      setActiveEmailDemoCode('123456');
-      setEmailOtpInput('123456');
-    } finally {
-      setIsEmailSending(false);
-    }
-  };
-
-  const handleInstantVerifyEmail = () => {
-    setEmailVerified(true);
-    setEmailOtpSent(true);
-    setEmailVerificationToken(`tok_e_instant_${Date.now()}`);
-    setEmailError(null);
-  };
-
-  // Verify Email OTP via real server-side API
-  const handleVerifyEmailOtp = async () => {
-    const targetEmail = email.trim() || 'business@bizcore.app';
-    const code = emailOtpInput.trim() || activeEmailDemoCode || '123456';
-    setEmailError(null);
-    setIsEmailVerifying(true);
-
-    try {
-      const res = await submitEmailOtp(targetEmail, code);
-      if (res.success || code === '123456' || code === activeEmailDemoCode) {
-        setEmailVerified(true);
-        setEmailVerificationToken(res.verificationToken || `tok_e_${Date.now()}`);
-        setEmailError(null);
+      if (res.success) {
+        setMobileVerified(true);
+        setMobileVerificationToken(res.verificationToken);
+        setMobileError(null);
+        setFieldErrors((prev) => {
+          const next = { ...prev };
+          delete next.mobileNumber;
+          return next;
+        });
       } else {
-        setEmailAttempts((prev) => prev + 1);
-        setEmailError(res.error || 'Invalid OTP. Please try again.');
+        setMobileError(res.error || 'Invalid OTP code. Please enter the correct code.');
       }
-    } catch {
-      setEmailVerified(true);
-      setEmailVerificationToken(`tok_e_auto_${Date.now()}`);
-      setEmailError(null);
-    } finally {
-      setIsEmailVerifying(false);
+    } catch (err: any) {
+      setIsMobileVerifying(false);
+      setMobileError(err?.message || 'Verification failed. Please try again.');
     }
   };
 
-  // Validate GST number if entered (optional)
-  const validateGst = (val: string): boolean => {
-    if (!val.trim()) {
-      setGstError(null);
-      return true;
-    }
-    const clean = val.trim().toUpperCase();
-    const gstRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
-    if (!gstRegex.test(clean)) {
-      setGstError('Invalid 15-character GSTIN format (e.g. 27AAAAA0000A1Z5)');
-      return false;
-    }
-    setGstError(null);
-    return true;
-  };
-
-  const isGstValid = !gstNumber.trim() || /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(gstNumber.trim().toUpperCase());
-  const isFormValid =
-    fullName.trim().length >= 2 &&
-    mobileNumber.replace(/\D/g, '').length >= 10 &&
-    businessName.trim().length >= 2 &&
-    isGstValid;
-
-  const handleSubmit = (e: React.FormEvent) => {
+  // Form Validation & Submission
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isFormValid) return;
+    setGeneralError(null);
 
-    if (gstNumber.trim() && !validateGst(gstNumber)) {
+    const errors: Record<string, string> = {};
+
+    // 1. Name
+    const nameCheck = validateName(name);
+    if (!nameCheck.valid) errors.name = nameCheck.error!;
+
+    // 2. Mobile Number
+    const mobileCheck = validateMobileNumber(mobileNumber);
+    if (!mobileCheck.valid) errors.mobileNumber = mobileCheck.error!;
+    else if (!mobileVerified) {
+      errors.mobileNumber = 'Please verify your mobile number with OTP before continuing.';
+    }
+
+    // 3. Email ID
+    const emailCheck = validateEmail(email);
+    if (!emailCheck.valid) errors.email = emailCheck.error!;
+
+    // 4. Address
+    const addressCheck = validateAddress(address);
+    if (!addressCheck.valid) errors.address = addressCheck.error!;
+
+    // 5. Business Name
+    const bizNameCheck = validateBusinessName(businessName);
+    if (!bizNameCheck.valid) errors.businessName = bizNameCheck.error!;
+
+    // 6. GSTIN (Optional)
+    const gstinCheck = validateGSTIN(gstin);
+    if (!gstinCheck.valid) errors.gstin = gstinCheck.error!;
+
+    // 7. Category
+    if (!isValidCategory(category)) {
+      errors.category = 'Please select a valid Category (Sales or Service).';
+    }
+
+    // 8. Subcategory
+    if (!subcategory || !subcategory.trim()) {
+      errors.subcategory = 'Please select a Subcategory.';
+    } else if (!isValidSubcategory(category, subcategory)) {
+      errors.subcategory = `"${subcategory}" is not a valid subcategory for ${category}.`;
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
       return;
     }
 
-    onRegister({
-      userId: initialUser?.uid,
-      fullName: fullName.trim(),
-      mobileNumber: mobileNumber.trim(),
-      email: email.trim() || 'business@bizcore.app',
-      businessName: businessName.trim(),
-      businessAddress: businessAddress.trim() || 'Shop No. 1, Main Market',
-      gstNumber: gstNumber.trim() ? gstNumber.trim().toUpperCase() : undefined,
-      mobileVerified: true,
-      emailVerified: true,
-      mobileVerificationToken: mobileVerificationToken || `tok_m_${Date.now()}`,
-      emailVerificationToken: emailVerificationToken || `tok_e_${Date.now()}`,
-    });
+    setFieldErrors({});
+    setIsSubmitting(true);
+
+    try {
+      // Server-Side Registration Validation
+      const serverRes = await fetch('/api/account/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: initialUser?.uid,
+          name: nameCheck.trimmed,
+          fullName: nameCheck.trimmed,
+          mobileNumber: mobileCheck.normalized,
+          email: emailCheck.normalized,
+          address: addressCheck.trimmed,
+          businessAddress: addressCheck.trimmed,
+          businessName: bizNameCheck.trimmed,
+          gstin: gstinCheck.normalized || undefined,
+          gstNumber: gstinCheck.normalized || undefined,
+          category,
+          subcategory: subcategory.trim(),
+          mobileVerificationToken,
+          emailVerificationToken,
+          isGoogleAuthenticated,
+        }),
+      });
+
+      const serverData = await serverRes.json();
+      if (!serverRes.ok || !serverData.success) {
+        setIsSubmitting(false);
+        setGeneralError(serverData.error || 'Registration failed server validation.');
+        if (serverData.errors) {
+          setFieldErrors(serverData.errors);
+        }
+        return;
+      }
+
+      // Hand off to application state handler
+      await onRegister({
+        userId: initialUser?.uid || serverData.user?.id,
+        name: nameCheck.trimmed,
+        fullName: nameCheck.trimmed,
+        mobileNumber: mobileCheck.normalized,
+        email: emailCheck.normalized,
+        address: addressCheck.trimmed,
+        businessAddress: addressCheck.trimmed,
+        businessName: bizNameCheck.trimmed,
+        gstin: gstinCheck.normalized || undefined,
+        gstNumber: gstinCheck.normalized || undefined,
+        category,
+        subcategory: subcategory.trim(),
+        mobileVerified: true,
+        emailVerified: true,
+        mobileVerificationToken,
+        emailVerificationToken,
+      });
+    } catch (err: any) {
+      setIsSubmitting(false);
+      setGeneralError(err?.message || 'Registration failed. Please check connection and try again.');
+    }
   };
 
+  if (!isOpen) return null;
+
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto no-print">
+    <div className="fixed inset-0 z-50 overflow-y-auto no-print animate-in fade-in duration-200">
       {/* Backdrop */}
       <div
-        onClick={onClose}
-        className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity"
+        onClick={canCancel && onClose ? onClose : undefined}
+        className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs transition-opacity"
       />
 
       <div className="flex min-h-full items-center justify-center p-3 sm:p-4 text-center">
-        <div className="relative w-full max-w-xl transform overflow-hidden rounded-3xl bg-white text-left shadow-2xl transition-all border border-slate-200/90 my-4 sm:my-8 animate-in zoom-in-95 duration-200 flex flex-col max-h-[92vh]">
+        <div className="relative w-full max-w-xl transform overflow-hidden rounded-3xl bg-white text-left shadow-2xl transition-all border border-slate-200/90 my-4 sm:my-8 flex flex-col max-h-[92vh]">
           {/* Header */}
-          <div className="p-6 sm:p-7 border-b border-slate-100 bg-white relative">
-            {onClose && (
+          <div className="p-6 sm:p-7 border-b border-slate-100 bg-white relative shrink-0">
+            {canCancel && onClose && (
               <button
                 type="button"
                 onClick={onClose}
@@ -389,76 +422,79 @@ export const SingleRegistrationModal: React.FC<SingleRegistrationModalProps> = (
             )}
 
             <div className="flex items-center gap-3 mb-2">
-              <div className="p-2 rounded-2xl bg-blue-50 border border-blue-200 shadow-2xs">
+              <div className="p-2 rounded-2xl bg-amber-400 text-slate-950 font-black shadow-xs">
                 <BizcoreLogo variant="icon" size="sm" />
               </div>
-              <div className="flex items-center tracking-tight leading-none">
-                <span className="font-black text-xl text-slate-900">BIZ</span>
-                <span className="font-black text-xl text-blue-600">CORE</span>
+              <div>
+                <h2 className="text-xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                  <span>Register Your Business</span>
+                  <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
+                    Official
+                  </span>
+                </h2>
+                <p className="text-xs text-slate-500 font-medium">
+                  Complete official business onboarding in 8 quick fields
+                </p>
               </div>
             </div>
 
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-              Create Your BIZCORE Account
-            </h1>
-            <p className="text-xs text-slate-500 mt-1">
-              Create your account and set up your business in one simple step.
-            </p>
-
-            {/* Quick Status Bar */}
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
-              <span
-                className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full font-bold border transition-colors ${
-                  mobileVerified
-                    ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                    : 'bg-slate-100 text-slate-500 border-slate-200'
-                }`}
-              >
-                {mobileVerified ? <Check className="w-3 h-3 text-emerald-600" /> : <Phone className="w-3 h-3" />}
-                <span>{mobileVerified ? 'Mobile Verified' : 'Mobile Pending'}</span>
-              </span>
-
-              <span
-                className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full font-bold border transition-colors ${
-                  emailVerified
-                    ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                    : 'bg-slate-100 text-slate-500 border-slate-200'
-                }`}
-              >
-                {emailVerified ? <Check className="w-3 h-3 text-emerald-600" /> : <Mail className="w-3 h-3" />}
-                <span>{emailVerified ? 'Email Verified' : 'Email Pending'}</span>
-              </span>
-
-              {isGoogleAuthenticated && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-bold bg-amber-50 text-amber-900 border border-amber-200 text-[10px]">
-                  <ShieldCheck className="w-3 h-3 text-amber-600" />
-                  Google Connected
-                </span>
-              )}
-            </div>
+            {isGoogleAuthenticated && (
+              <div className="mt-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-900 border border-emerald-200 text-xs font-bold">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Google Account Authenticated ({initialUser?.email})</span>
+              </div>
+            )}
           </div>
 
-          {/* Form Body - exact order */}
-          <form onSubmit={handleSubmit} className="p-6 sm:p-7 space-y-4 overflow-y-auto flex-1 text-xs">
-            {/* FIELD 1: Full Name * */}
+          {/* Form Body - Exact 8 required fields */}
+          <form onSubmit={handleSubmit} className="p-6 sm:p-7 space-y-5 overflow-y-auto flex-1 text-xs">
+            {generalError && (
+              <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl flex items-start gap-2.5 text-rose-800 text-xs font-medium animate-in shake duration-200">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <span className="font-bold">Registration Error: </span>
+                  {generalError}
+                </div>
+              </div>
+            )}
+
+            {/* FIELD 1: Name * */}
             <div>
               <label className="block text-xs font-bold text-slate-800 mb-1">
-                1. Full Name <span className="text-rose-500">*</span>
+                1. Name <span className="text-rose-500">*</span>
               </label>
               <div className="relative">
                 <User className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
                   required
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Enter Your Full Name"
-                  className="w-full pl-9 pr-3 py-2.5 border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-amber-400 focus:border-amber-400 bg-white"
+                  value={name}
+                  onChange={(e) => {
+                    setName(e.target.value);
+                    if (fieldErrors.name) {
+                      setFieldErrors((prev) => {
+                        const next = { ...prev };
+                        delete next.name;
+                        return next;
+                      });
+                    }
+                  }}
+                  placeholder="Enter full name of owner / proprietor"
+                  maxLength={100}
+                  className={`w-full pl-9 pr-3 py-2.5 border rounded-xl text-xs font-semibold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-amber-400 ${
+                    fieldErrors.name ? 'border-rose-400 bg-rose-50/20' : 'border-slate-300 bg-white'
+                  }`}
                 />
               </div>
+              {fieldErrors.name && (
+                <p className="text-[11px] font-bold text-rose-600 mt-1 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3 shrink-0" />
+                  <span>{fieldErrors.name}</span>
+                </p>
+              )}
             </div>
 
-            {/* FIELD 2: Mobile Number * & OTP */}
+            {/* FIELD 2: Mobile Number * (with OTP verification) */}
             <div className="space-y-2">
               <label className="block text-xs font-bold text-slate-800 mb-1">
                 2. Mobile Number <span className="text-rose-500">*</span>
@@ -472,56 +508,64 @@ export const SingleRegistrationModal: React.FC<SingleRegistrationModalProps> = (
                     disabled={mobileVerified}
                     value={mobileNumber}
                     onChange={(e) => {
-                      setMobileNumber(e.target.value);
+                      const clean = e.target.value.replace(/\D/g, '').slice(0, 10);
+                      setMobileNumber(clean);
                       if (mobileVerified) setMobileVerified(false);
                       if (mobileOtpSent) setMobileOtpSent(false);
+                      if (fieldErrors.mobileNumber) {
+                        setFieldErrors((prev) => {
+                          const next = { ...prev };
+                          delete next.mobileNumber;
+                          return next;
+                        });
+                      }
                     }}
-                    placeholder="Enter Mobile Number"
-                    maxLength={15}
+                    placeholder="10-digit Indian Mobile (e.g. 9876543210)"
+                    maxLength={10}
                     className={`w-full pl-9 pr-3 py-2.5 border rounded-xl text-xs font-semibold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-amber-400 ${
                       mobileVerified
-                        ? 'bg-emerald-50/40 border-emerald-300'
+                        ? 'bg-emerald-50/60 border-emerald-400 text-emerald-950 font-bold'
+                        : fieldErrors.mobileNumber
+                        ? 'border-rose-400 bg-rose-50/20'
                         : 'bg-white border-slate-300'
                     }`}
                   />
                 </div>
 
                 {!mobileVerified ? (
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <button
-                      type="button"
-                      onClick={handleSendMobileOtp}
-                      disabled={isMobileSending || mobileTimer > 0 || mobileNumber.replace(/\D/g, '').length < 10}
-                      className="px-3.5 py-2.5 bg-amber-400 hover:bg-amber-300 active:bg-amber-500 disabled:opacity-50 text-slate-950 font-bold rounded-xl text-xs transition-colors shrink-0 shadow-2xs cursor-pointer flex items-center gap-1.5"
-                    >
-                      {isMobileSending ? (
-                        <>
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          <span>Sending...</span>
-                        </>
-                      ) : mobileTimer > 0 ? (
-                        `Resend (${mobileTimer}s)`
-                      ) : mobileOtpSent ? (
-                        'Resend OTP'
-                      ) : (
-                        'Send OTP'
-                      )}
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSendMobileOtp}
+                    disabled={isMobileSending || mobileTimer > 0 || mobileNumber.length < 10}
+                    className="px-3.5 py-2.5 bg-amber-400 hover:bg-amber-300 active:bg-amber-500 disabled:opacity-50 text-slate-950 font-black rounded-xl text-xs transition-colors shrink-0 shadow-2xs cursor-pointer flex items-center gap-1.5"
+                  >
+                    {isMobileSending ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Sending...</span>
+                      </>
+                    ) : mobileTimer > 0 ? (
+                      `Resend in ${mobileTimer}s`
+                    ) : mobileOtpSent ? (
+                      'Resend OTP'
+                    ) : (
+                      'Send OTP'
+                    )}
+                  </button>
                 ) : (
-                  <div className="px-3 py-2 bg-emerald-50 text-emerald-800 border border-emerald-300 rounded-xl font-bold flex items-center gap-1.5 shrink-0">
+                  <div className="px-3 py-2.5 bg-emerald-50 text-emerald-900 border border-emerald-300 rounded-xl font-bold flex items-center gap-1.5 shrink-0 text-xs">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    <span>✓ Mobile Number Verified</span>
+                    <span>Verified</span>
                   </div>
                 )}
               </div>
 
-              {/* Mobile OTP UI */}
+              {/* Mobile OTP Box */}
               {mobileOtpSent && !mobileVerified && (
-                <div className="p-3 bg-amber-50/60 border border-amber-200/90 rounded-2xl space-y-2 animate-in slide-in-from-top-1 duration-150">
-                  <div className="text-[11px] text-amber-900 font-medium flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                    <span>6-digit OTP code sent via SMS to your mobile number. Enter it below:</span>
+                <div className="p-3 bg-amber-50/80 border border-amber-300/80 rounded-2xl space-y-2 animate-in slide-in-from-top-1 duration-150">
+                  <div className="text-[11px] text-amber-950 font-semibold flex items-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                    <span>Enter 6-digit OTP sent to +91 {mobileNumber}:</span>
                   </div>
 
                   <div className="flex gap-2">
@@ -529,7 +573,7 @@ export const SingleRegistrationModal: React.FC<SingleRegistrationModalProps> = (
                       type="text"
                       value={mobileOtpInput}
                       onChange={(e) => setMobileOtpInput(e.target.value)}
-                      placeholder="Enter 6-digit OTP"
+                      placeholder="6-digit OTP"
                       maxLength={6}
                       disabled={isMobileVerifying}
                       className="flex-1 px-3 py-2 bg-white border border-amber-300 rounded-xl text-xs font-mono font-bold tracking-widest text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-amber-400"
@@ -546,121 +590,117 @@ export const SingleRegistrationModal: React.FC<SingleRegistrationModalProps> = (
                           <span>Verifying...</span>
                         </>
                       ) : (
-                        'Verify Mobile OTP'
+                        'Verify OTP'
                       )}
                     </button>
                   </div>
 
+                  {activeMobileDemoCode && process.env.NODE_ENV !== 'production' && (
+                    <div className="text-[10px] text-amber-800 flex items-center justify-between">
+                      <span>Dev Mode Test OTP: <strong className="font-mono">{activeMobileDemoCode}</strong></span>
+                      <button
+                        type="button"
+                        onClick={() => setMobileOtpInput(activeMobileDemoCode)}
+                        className="underline font-bold text-amber-950 cursor-pointer"
+                      >
+                        Auto Fill
+                      </button>
+                    </div>
+                  )}
+
                   {mobileError && (
-                    <p className="text-[11px] text-rose-600 font-semibold">{mobileError}</p>
+                    <p className="text-[11px] font-bold text-rose-600 flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3 shrink-0" />
+                      <span>{mobileError}</span>
+                    </p>
                   )}
                 </div>
               )}
+
+              {fieldErrors.mobileNumber && (
+                <p className="text-[11px] font-bold text-rose-600 mt-1 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3 shrink-0" />
+                  <span>{fieldErrors.mobileNumber}</span>
+                </p>
+              )}
             </div>
 
-            {/* FIELD 3: Email ID * & OTP */}
-            <div className="space-y-2">
+            {/* FIELD 3: Email ID * */}
+            <div>
               <label className="block text-xs font-bold text-slate-800 mb-1">
                 3. Email ID <span className="text-rose-500">*</span>
               </label>
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <Mail className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="email"
-                    required
-                    disabled={emailVerified}
-                    value={email}
-                    onChange={(e) => {
-                      setEmail(e.target.value);
-                      if (emailVerified) setEmailVerified(false);
-                      if (emailOtpSent) setEmailOtpSent(false);
-                    }}
-                    placeholder="Enter Your Email Address"
-                    className={`w-full pl-9 pr-3 py-2.5 border rounded-xl text-xs font-semibold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-amber-400 ${
-                      emailVerified
-                        ? 'bg-emerald-50/40 border-emerald-300'
-                        : 'bg-white border-slate-300'
-                    }`}
-                  />
-                </div>
-
-                {!emailVerified ? (
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <button
-                      type="button"
-                      onClick={handleSendEmailOtp}
-                      disabled={isEmailSending || emailTimer > 0}
-                      className="px-3.5 py-2.5 bg-amber-400 hover:bg-amber-300 active:bg-amber-500 disabled:opacity-50 text-slate-950 font-bold rounded-xl text-xs transition-colors shrink-0 shadow-2xs cursor-pointer flex items-center gap-1.5"
-                    >
-                      {isEmailSending ? (
-                        <>
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          <span>Sending...</span>
-                        </>
-                      ) : emailTimer > 0 ? (
-                        `Resend (${emailTimer}s)`
-                      ) : emailOtpSent ? (
-                        'Resend OTP'
-                      ) : (
-                        'Send OTP'
-                      )}
-                    </button>
-                  </div>
-                ) : (
-                  <div className="px-3 py-2 bg-emerald-50 text-emerald-800 border border-emerald-300 rounded-xl font-bold flex items-center gap-1.5 shrink-0">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    <span>✓ Email Verified</span>
-                  </div>
-                )}
+              <div className="relative">
+                <Mail className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (fieldErrors.email) {
+                      setFieldErrors((prev) => {
+                        const next = { ...prev };
+                        delete next.email;
+                        return next;
+                      });
+                    }
+                  }}
+                  placeholder="e.g. business@example.com"
+                  maxLength={120}
+                  className={`w-full pl-9 pr-3 py-2.5 border rounded-xl text-xs font-semibold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-amber-400 ${
+                    fieldErrors.email ? 'border-rose-400 bg-rose-50/20' : 'border-slate-300 bg-white'
+                  }`}
+                />
               </div>
-
-              {/* Email OTP UI */}
-              {emailOtpSent && !emailVerified && (
-                <div className="p-3 bg-amber-50/60 border border-amber-200/90 rounded-2xl space-y-2 animate-in slide-in-from-top-1 duration-150">
-                  <div className="text-[11px] text-amber-900 font-medium flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                    <span>6-digit verification code sent to your email. Enter it below:</span>
-                  </div>
-
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={emailOtpInput}
-                      onChange={(e) => setEmailOtpInput(e.target.value)}
-                      placeholder="Enter 6-digit OTP"
-                      maxLength={6}
-                      disabled={isEmailVerifying}
-                      className="flex-1 px-3 py-2 bg-white border border-amber-300 rounded-xl text-xs font-mono font-bold tracking-widest text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-amber-400"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleVerifyEmailOtp}
-                      disabled={isEmailVerifying || !emailOtpInput.trim()}
-                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs shadow-2xs transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
-                    >
-                      {isEmailVerifying ? (
-                        <>
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          <span>Verifying...</span>
-                        </>
-                      ) : (
-                        'Verify Email OTP'
-                      )}
-                    </button>
-                  </div>
-
-                  {emailError && (
-                    <p className="text-[11px] text-rose-600 font-semibold">{emailError}</p>
-                  )}
-                </div>
+              {fieldErrors.email && (
+                <p className="text-[11px] font-bold text-rose-600 mt-1 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3 shrink-0" />
+                  <span>{fieldErrors.email}</span>
+                </p>
               )}
             </div>
 
-            {/* FIELD 4: Business / Shop Name * */}
+            {/* FIELD 4: Address * */}
             <div>
               <label className="block text-xs font-bold text-slate-800 mb-1">
-                4. Business / Shop Name <span className="text-rose-500">*</span>
+                4. Address <span className="text-rose-500">*</span>
+              </label>
+              <div className="relative">
+                <MapPin className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                <textarea
+                  required
+                  rows={2}
+                  value={address}
+                  onChange={(e) => {
+                    setAddress(e.target.value);
+                    if (fieldErrors.address) {
+                      setFieldErrors((prev) => {
+                        const next = { ...prev };
+                        delete next.address;
+                        return next;
+                      });
+                    }
+                  }}
+                  placeholder="Enter complete registered shop / business address"
+                  maxLength={300}
+                  className={`w-full pl-9 pr-3 py-2 border rounded-xl text-xs font-semibold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-amber-400 resize-none ${
+                    fieldErrors.address ? 'border-rose-400 bg-rose-50/20' : 'border-slate-300 bg-white'
+                  }`}
+                />
+              </div>
+              {fieldErrors.address && (
+                <p className="text-[11px] font-bold text-rose-600 mt-1 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3 shrink-0" />
+                  <span>{fieldErrors.address}</span>
+                </p>
+              )}
+            </div>
+
+            {/* FIELD 5: Business Name * */}
+            <div>
+              <label className="block text-xs font-bold text-slate-800 mb-1">
+                5. Business Name <span className="text-rose-500">*</span>
               </label>
               <div className="relative">
                 <Building2 className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -668,122 +708,253 @@ export const SingleRegistrationModal: React.FC<SingleRegistrationModalProps> = (
                   type="text"
                   required
                   value={businessName}
-                  onChange={(e) => setBusinessName(e.target.value)}
-                  placeholder="Enter Your Business Name"
-                  className="w-full pl-9 pr-3 py-2.5 border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-amber-400 bg-white"
+                  onChange={(e) => {
+                    setBusinessName(e.target.value);
+                    if (fieldErrors.businessName) {
+                      setFieldErrors((prev) => {
+                        const next = { ...prev };
+                        delete next.businessName;
+                        return next;
+                      });
+                    }
+                  }}
+                  placeholder="e.g. Apex Traders, Gupta Electronics"
+                  maxLength={120}
+                  className={`w-full pl-9 pr-3 py-2.5 border rounded-xl text-xs font-semibold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-amber-400 ${
+                    fieldErrors.businessName ? 'border-rose-400 bg-rose-50/20' : 'border-slate-300 bg-white'
+                  }`}
                 />
               </div>
+              {fieldErrors.businessName && (
+                <p className="text-[11px] font-bold text-rose-600 mt-1 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3 shrink-0" />
+                  <span>{fieldErrors.businessName}</span>
+                </p>
+              )}
             </div>
 
-            {/* FIELD 5: Business Address * */}
-            <div>
-              <label className="block text-xs font-bold text-slate-800 mb-1">
-                5. Business Address <span className="text-rose-500">*</span>
-              </label>
-              <div className="relative">
-                <MapPin className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
-                <textarea
-                  rows={2}
-                  required
-                  value={businessAddress}
-                  onChange={(e) => setBusinessAddress(e.target.value)}
-                  placeholder="Enter Your Business Address"
-                  className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-amber-400 bg-white"
-                />
-              </div>
-            </div>
-
-            {/* FIELD 6: GST Number (Optional) */}
+            {/* FIELD 6: GSTIN (Optional) */}
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="text-xs font-bold text-slate-800">
-                  6. GST Number <span className="text-slate-400 font-normal">(Optional)</span>
+                  6. GSTIN <span className="text-slate-400 font-normal">(Optional)</span>
                 </label>
-                <span className="text-[10px] text-slate-400">Non-GST merchants can leave this blank</span>
+                <span className="text-[10px] text-slate-400 font-medium">15 Characters</span>
               </div>
               <div className="relative">
                 <FileCheck2 className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
-                  value={gstNumber}
+                  value={gstin}
                   onChange={(e) => {
-                    const up = e.target.value.toUpperCase();
-                    setGstNumber(up);
-                    validateGst(up);
+                    const clean = e.target.value.toUpperCase();
+                    setGstin(clean);
+                    if (fieldErrors.gstin) {
+                      setFieldErrors((prev) => {
+                        const next = { ...prev };
+                        delete next.gstin;
+                        return next;
+                      });
+                    }
                   }}
-                  placeholder="27AAAAA0000A1Z5 (Optional)"
+                  placeholder="e.g. 27AAAAA0000A1Z5"
                   maxLength={15}
-                  className={`w-full pl-9 pr-3 py-2.5 border rounded-xl text-xs font-mono font-bold uppercase tracking-wider text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-amber-400 bg-white ${
-                    gstError ? 'border-rose-400 bg-rose-50/30' : 'border-slate-300'
+                  className={`w-full pl-9 pr-3 py-2.5 border rounded-xl text-xs font-mono font-bold tracking-wider text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-amber-400 ${
+                    fieldErrors.gstin ? 'border-rose-400 bg-rose-50/20' : 'border-slate-300 bg-white'
                   }`}
                 />
               </div>
-              {gstError && <p className="text-[11px] text-rose-600 font-semibold mt-1">{gstError}</p>}
-            </div>
-
-            {/* Validation Checklist Hint */}
-            <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-2xl text-[11px] text-slate-600 space-y-1">
-              <span className="font-bold text-slate-800 block">Registration Checklist:</span>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 text-[10px]">
-                <div className="flex items-center gap-1">
-                  {fullName.trim().length >= 2 ? (
-                    <Check className="w-3 h-3 text-emerald-600" />
-                  ) : (
-                    <span className="w-3 h-3 rounded-full bg-slate-300 inline-block" />
-                  )}
-                  <span>Full Name</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  {mobileVerified ? (
-                    <Check className="w-3 h-3 text-emerald-600" />
-                  ) : (
-                    <span className="w-3 h-3 rounded-full bg-slate-300 inline-block" />
-                  )}
-                  <span>Mobile OTP Verified</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  {emailVerified ? (
-                    <Check className="w-3 h-3 text-emerald-600" />
-                  ) : (
-                    <span className="w-3 h-3 rounded-full bg-slate-300 inline-block" />
-                  )}
-                  <span>Email OTP Verified</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  {businessName.trim().length >= 2 && businessAddress.trim().length >= 3 ? (
-                    <Check className="w-3 h-3 text-emerald-600" />
-                  ) : (
-                    <span className="w-3 h-3 rounded-full bg-slate-300 inline-block" />
-                  )}
-                  <span>Business Name &amp; Address</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Bottom Actions */}
-            <div className="pt-2 sticky bottom-0 bg-white border-t border-slate-100 flex flex-col gap-2">
-              <button
-                type="submit"
-                disabled={!isFormValid}
-                className="w-full py-3 px-4 bg-amber-400 hover:bg-amber-300 active:bg-amber-500 disabled:opacity-40 disabled:cursor-not-allowed text-slate-950 font-black rounded-xl text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <span>Create BIZCORE Account</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
-
-              {onSwitchToLogin && (
-                <div className="text-center text-xs text-slate-500 pt-1">
-                  Already have an account?{' '}
-                  <button
-                    type="button"
-                    onClick={onSwitchToLogin}
-                    className="text-amber-800 hover:text-amber-950 font-bold underline cursor-pointer"
-                  >
-                    Login here
-                  </button>
-                </div>
+              {fieldErrors.gstin && (
+                <p className="text-[11px] font-bold text-rose-600 mt-1 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3 shrink-0" />
+                  <span>{fieldErrors.gstin}</span>
+                </p>
               )}
             </div>
+
+            {/* FIELD 7: Category (Sales | Service) * */}
+            <div>
+              <label className="block text-xs font-bold text-slate-800 mb-1.5">
+                7. Category <span className="text-rose-500">*</span>
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                {/* Sales Button */}
+                <button
+                  type="button"
+                  onClick={() => handleCategoryChange('Sales')}
+                  className={`flex items-center justify-center gap-2 py-3 px-4 rounded-2xl border text-xs font-black transition-all cursor-pointer shadow-2xs ${
+                    category === 'Sales'
+                      ? 'bg-amber-400 text-slate-950 border-amber-400 ring-2 ring-amber-300/60 shadow-md'
+                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100 hover:text-slate-900'
+                  }`}
+                >
+                  <ShoppingBag className="w-4 h-4" />
+                  <span>Sales</span>
+                </button>
+
+                {/* Service Button */}
+                <button
+                  type="button"
+                  onClick={() => handleCategoryChange('Service')}
+                  className={`flex items-center justify-center gap-2 py-3 px-4 rounded-2xl border text-xs font-black transition-all cursor-pointer shadow-2xs ${
+                    category === 'Service'
+                      ? 'bg-amber-400 text-slate-950 border-amber-400 ring-2 ring-amber-300/60 shadow-md'
+                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100 hover:text-slate-900'
+                  }`}
+                >
+                  <Wrench className="w-4 h-4" />
+                  <span>Service</span>
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-500 mt-1">
+                Selecting {category} shows only {category} subcategories. Changing category clears subcategory.
+              </p>
+              {fieldErrors.category && (
+                <p className="text-[11px] font-bold text-rose-600 mt-1 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3 shrink-0" />
+                  <span>{fieldErrors.category}</span>
+                </p>
+              )}
+            </div>
+
+            {/* FIELD 8: Subcategory * (Filtered by Category) */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-bold text-slate-800">
+                  8. Subcategory ({category}) <span className="text-rose-500">*</span>
+                </label>
+                <span className="text-[10px] font-bold text-slate-500">
+                  {availableSubcategories.length} {category} options
+                </span>
+              </div>
+
+              {/* Subcategory Select Box with Live Filter */}
+              <div className="space-y-2">
+                <div className="relative">
+                  <select
+                    required
+                    value={subcategory}
+                    onChange={(e) => {
+                      setSubcategory(e.target.value);
+                      if (fieldErrors.subcategory) {
+                        setFieldErrors((prev) => {
+                          const next = { ...prev };
+                          delete next.subcategory;
+                          return next;
+                        });
+                      }
+                    }}
+                    className={`w-full px-3.5 py-2.5 border rounded-xl text-xs font-bold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-amber-400 bg-white ${
+                      fieldErrors.subcategory ? 'border-rose-400 bg-rose-50/20' : 'border-slate-300'
+                    }`}
+                  >
+                    <option value="">-- Select a {category} Subcategory --</option>
+                    {availableSubcategories.map((sub) => (
+                      <option key={sub} value={sub}>
+                        {sub}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Subcategory Search filter for convenience */}
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={subcategorySearch}
+                    onChange={(e) => setSubcategorySearch(e.target.value)}
+                    placeholder={`Filter ${category} subcategories (e.g. ${category === 'Sales' ? 'Kirana, Mobile, Hardware' : 'Repair, Detailing, Electrician'})...`}
+                    className="w-full pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-[11px] font-medium text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-amber-400 bg-slate-50"
+                  />
+                </div>
+
+                {/* Quick Selection Tags from search */}
+                {subcategorySearch.trim() && (
+                  <div className="max-h-36 overflow-y-auto p-2 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+                    {filteredSubcategories.length > 0 ? (
+                      filteredSubcategories.map((sub) => (
+                        <button
+                          key={sub}
+                          type="button"
+                          onClick={() => {
+                            setSubcategory(sub);
+                            setSubcategorySearch('');
+                            if (fieldErrors.subcategory) {
+                              setFieldErrors((prev) => {
+                                const next = { ...prev };
+                                delete next.subcategory;
+                                return next;
+                              });
+                            }
+                          }}
+                          className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer flex items-center justify-between ${
+                            subcategory === sub
+                              ? 'bg-amber-400 text-slate-950 font-bold'
+                              : 'hover:bg-slate-200 text-slate-800'
+                          }`}
+                        >
+                          <span>{sub}</span>
+                          {subcategory === sub && <Check className="w-3.5 h-3.5 text-slate-950" />}
+                        </button>
+                      ))
+                    ) : (
+                      <p className="text-[11px] text-slate-500 py-1 px-2">
+                        No {category} subcategories match &quot;{subcategorySearch}&quot;
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {subcategory && (
+                <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 text-amber-950 border border-amber-300 rounded-full font-black text-[11px]">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Selected: {subcategory} ({category})</span>
+                </div>
+              )}
+
+              {fieldErrors.subcategory && (
+                <p className="text-[11px] font-bold text-rose-600 mt-1 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3 shrink-0" />
+                  <span>{fieldErrors.subcategory}</span>
+                </p>
+              )}
+            </div>
+
+            {/* Submit Button */}
+            <div className="pt-2">
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full py-3.5 px-6 rounded-2xl bg-slate-950 hover:bg-slate-900 active:bg-slate-800 text-white font-black text-sm tracking-wide shadow-lg hover:shadow-xl transition-all cursor-pointer flex items-center justify-center gap-2 group disabled:opacity-50"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
+                    <span>Verifying &amp; Registering Business...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Complete Business Registration</span>
+                    <ArrowRight className="w-4 h-4 text-amber-400 group-hover:translate-x-1 transition-transform" />
+                  </>
+                )}
+              </button>
+            </div>
+
+            {onSwitchToLogin && (
+              <div className="text-center pt-1 text-slate-500 text-xs">
+                Already have an account?{' '}
+                <button
+                  type="button"
+                  onClick={onSwitchToLogin}
+                  className="font-bold text-amber-600 hover:text-amber-700 underline cursor-pointer"
+                >
+                  Log in with Mobile OTP
+                </button>
+              </div>
+            )}
           </form>
         </div>
       </div>

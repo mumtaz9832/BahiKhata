@@ -27,12 +27,13 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import {
-  getAdminCredentials,
+  authenticateAdminStep1,
+  authenticateAdminStep2,
   updateAdminCredentials,
   setAdminLoggedIn,
-  verifyAdminCredentials,
-  ADMIN_2FA_PHONE,
-  ADMIN_2FA_EMAIL,
+  clearAdminSession,
+  logAdminAction,
+  fetchAdminAuditLogs,
 } from '../utils/adminAuth';
 import {
   getStorageStatistics,
@@ -138,40 +139,9 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     return () => clearInterval(timer);
   }, [adminOtpCooldown]);
 
-  // Dispatch 2FA OTP to 9647398509 and mumtazkhan9832@gmail.com without exposing them on screen
-  const handleDispatch2FaOtp = async () => {
-    setIsSendingOtp(true);
-    setAuthError(null);
+  const [activeChallengeId, setActiveChallengeId] = useState<string>('');
 
-    try {
-      const [resPhone, resEmail] = await Promise.all([
-        requestMobileOtp(ADMIN_2FA_PHONE),
-        requestEmailOtp(ADMIN_2FA_EMAIL),
-      ]);
-      const demoCode = resPhone.demoCode || resEmail.demoCode || '123456';
-      setActiveDemoOtp(demoCode);
-      setAdminOtpCooldown(resPhone.resendCooldown || 30);
-      setAdminOtpCode('');
-      setIsSendingOtp(false);
-      setAuthSuccess(
-        isHindi
-          ? 'सुरक्षा OTP अधिकृत व्यवस्थापक मोबाइल व ईमेल पर भेजा गया है।'
-          : 'Two-Factor security code dispatched to authorized admin mobile & email.'
-      );
-    } catch {
-      setIsSendingOtp(false);
-      setActiveDemoOtp('123456');
-      setAdminOtpCooldown(30);
-      setAdminOtpCode('');
-      setAuthSuccess(
-        isHindi
-          ? 'सुरक्षा OTP अधिकृत व्यवस्थापक मोबाइल व ईमेल पर भेजा गया है।'
-          : 'Two-Factor security code dispatched to authorized admin mobile & email.'
-      );
-    }
-  };
-
-  // Step 1: Verify Manual Credentials
+  // Step 1: Verify Credentials via secure server endpoint
   const handleVerifyCredentials = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError(null);
@@ -189,19 +159,34 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
       return;
     }
 
-    if (verifyAdminCredentials(cleanId, cleanPass)) {
+    setIsSendingOtp(true);
+    const res = await authenticateAdminStep1(cleanId, cleanPass);
+    setIsSendingOtp(false);
+
+    if (res.success && res.challengeId) {
+      setActiveChallengeId(res.challengeId);
+      if (res.demoCode) {
+        setActiveDemoOtp(res.demoCode);
+      }
       setAdminAuthStep('2fa');
-      await handleDispatch2FaOtp();
+      setAdminOtpCooldown(30);
+      setAdminOtpCode('');
+      setAuthSuccess(
+        isHindi
+          ? 'सुरक्षा OTP अधिकृत व्यवस्थापक संपर्क पर भेजा गया है।'
+          : 'Two-Factor security code dispatched to authorized admin contact.'
+      );
     } else {
       setAuthError(
-        isHindi
-          ? 'अमान्य एडमिन लॉगिन आईडी या पासवर्ड। प्रवेश अस्वीकृत।'
-          : 'Invalid Admin Login ID or Password. Access denied.'
+        res.error ||
+          (isHindi
+            ? 'अमान्य एडमिन लॉगिन आईडी या पासवर्ड। प्रवेश अस्वीकृत।'
+            : 'Invalid Admin Login ID or Password. Access denied.')
       );
     }
   };
 
-  // Step 2: Verify 2FA OTP & Unlock Dashboard
+  // Step 2: Verify 2FA OTP & Unlock Dashboard via server session token
   const handleVerify2FaOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanCode = adminOtpCode.trim();
@@ -218,52 +203,48 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     setAuthError(null);
     setIsVerifyingOtp(true);
 
-    try {
-      const [resPhone, resEmail] = await Promise.all([
-        submitMobileOtp(ADMIN_2FA_PHONE, cleanCode),
-        submitEmailOtp(ADMIN_2FA_EMAIL, cleanCode),
-      ]);
+    const res = await authenticateAdminStep2(activeChallengeId, cleanCode);
+    setIsVerifyingOtp(false);
 
-      const isMatch =
-        resPhone.success ||
-        resEmail.success ||
-        cleanCode === activeDemoOtp ||
-        cleanCode === '123456';
-
-      setIsVerifyingOtp(false);
-
-      if (isMatch) {
-        setAdminLoggedIn(true);
-        setIsUnlocked(true);
-        setManualLoginId('');
-        setManualPassword('');
-        setAdminOtpCode('');
-      } else {
-        setAuthError(
-          isHindi
+    if (res.success) {
+      setIsUnlocked(true);
+      setManualLoginId('');
+      setManualPassword('');
+      setAdminOtpCode('');
+      setAuthSuccess(null);
+    } else {
+      setAuthError(
+        res.error ||
+          (isHindi
             ? 'अमान्य 2FA सुरक्षा OTP कोड। कृपया सही कोड दर्ज करें।'
-            : 'Invalid 2FA security OTP code. Please enter the correct code.'
-        );
-      }
-    } catch {
-      setIsVerifyingOtp(false);
-      if (cleanCode === activeDemoOtp || cleanCode === '123456') {
-        setAdminLoggedIn(true);
-        setIsUnlocked(true);
-        setManualLoginId('');
-        setManualPassword('');
-        setAdminOtpCode('');
-      } else {
-        setAuthError(
-          isHindi
-            ? 'अमान्य 2FA सुरक्षा OTP कोड।'
-            : 'Invalid 2FA security code. Please try again.'
-        );
-      }
+            : 'Invalid 2FA security OTP code. Please enter the correct code.')
+      );
     }
   };
 
-  const handleUpdateCredentials = (e: React.FormEvent) => {
+  const handleResend2FaOtp = async () => {
+    if (adminOtpCooldown > 0 || isSendingOtp) return;
+    setIsSendingOtp(true);
+    setAuthError(null);
+    const res = await authenticateAdminStep1(manualLoginId.trim(), manualPassword.trim());
+    setIsSendingOtp(false);
+    if (res.success && res.challengeId) {
+      setActiveChallengeId(res.challengeId);
+      if (res.demoCode) {
+        setActiveDemoOtp(res.demoCode);
+      }
+      setAdminOtpCooldown(30);
+      setAuthSuccess(
+        isHindi
+          ? 'सुरक्षा OTP पुनः भेजा गया है।'
+          : 'Security code resent to authorized admin contact.'
+      );
+    } else {
+      setAuthError(res.error || 'Failed to resend 2FA code.');
+    }
+  };
+
+  const handleUpdateCredentials = async (e: React.FormEvent) => {
     e.preventDefault();
     setCredErrorMessage(null);
     setCredSuccessMessage(null);
@@ -277,7 +258,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
       return;
     }
 
-    const res = updateAdminCredentials(
+    const res = await updateAdminCredentials(
       currentPasswordInput,
       newLoginIdInput,
       newPasswordInput
@@ -296,7 +277,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
       isHindi
         ? 'लॉगिन आईडी व पासवर्ड सफलतापूर्वक बदल दिया गया!'
         : 'Admin Login ID and Password updated successfully!'
-      );
+    );
     setTimeout(() => setCredSuccessMessage(null), 4000);
   };
 
@@ -304,6 +285,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     e.preventDefault();
     saveBusinessProfile(profileFormData);
     setProfile(profileFormData);
+    logAdminAction('UPDATE_BUSINESS_PROFILE', `Updated profile for ${profileFormData.name}`);
     setProfileSuccessMessage(
       isHindi ? 'व्यापार प्रोफाइल सफलतापूर्वक सहेजी गई!' : 'Master Business profile saved successfully!'
     );
@@ -311,7 +293,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     setTimeout(() => setProfileSuccessMessage(null), 3000);
   };
 
-  const handlePurgeData = () => {
+  const handlePurgeData = async () => {
     if (
       !window.confirm(
         isHindi
@@ -322,6 +304,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
       return;
     }
     purgeAllFalseData();
+    await logAdminAction('PURGE_ALL_DATA', 'Purged all false data records');
     setPurgeSuccess(true);
     setStats(getStorageStatistics());
     if (onDataChanged) onDataChanged();
@@ -329,7 +312,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   };
 
   const handleAdminLogout = () => {
-    setAdminLoggedIn(false);
+    clearAdminSession();
     setIsUnlocked(false);
     setManualLoginId('');
     setManualPassword('');
@@ -338,7 +321,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   };
 
   const handleModalClose = () => {
-    setAdminLoggedIn(false);
+    clearAdminSession();
     setIsUnlocked(false);
     setManualLoginId('');
     setManualPassword('');
@@ -544,7 +527,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                       <button
                         type="button"
                         disabled={adminOtpCooldown > 0 || isSendingOtp}
-                        onClick={handleDispatch2FaOtp}
+                        onClick={handleResend2FaOtp}
                         className={`text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors ${
                           adminOtpCooldown > 0 || isSendingOtp
                             ? 'text-slate-400 cursor-not-allowed'

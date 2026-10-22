@@ -48,7 +48,7 @@ async function startServer() {
   }
 
   app.listen(port, host, () => {
-    console.log(`BahiKhata Server running at http://${host}:${port}`);
+    console.log(`BIZCORE Server running at http://${host}:${port}`);
   });
 }
 

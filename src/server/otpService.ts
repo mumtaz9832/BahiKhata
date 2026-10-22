@@ -132,15 +132,19 @@ export async function verifyMobileOtp(
   const now = Date.now();
   const cleanInput = userOtp.trim();
 
-  // Active validation: allow universal active code 123456, exact stored hash, or mockOtpMemoryStore record
-  let isValid = cleanInput === '123456';
+  // Secure cryptographic comparison: check stored hash, or development mock store
+  let isValid = false;
 
-  const mockRecord = mockOtpMemoryStore[`sms:${cleanPhone}`];
-  if (!isValid && mockRecord && Date.now() <= mockRecord.expiresAt && mockRecord.otp === cleanInput) {
-    isValid = true;
-    mockRecord.verified = true;
+  // In non-production, check development mock store with exact code match
+  if (process.env.NODE_ENV !== 'production') {
+    const mockRecord = mockOtpMemoryStore[`sms:${cleanPhone}`];
+    if (mockRecord && Date.now() <= mockRecord.expiresAt && mockRecord.otp === cleanInput) {
+      isValid = true;
+      mockRecord.verified = true;
+    }
   }
 
+  // Primary: verify cryptographically against hashed OTP store
   if (!isValid && record && now <= record.expiresAt) {
     const inputHash = hashOtp(cleanInput, record.salt);
     const inputBuffer = Buffer.from(inputHash, 'hex');
@@ -274,15 +278,19 @@ export async function verifyEmailOtp(
   const now = Date.now();
   const cleanInput = userOtp.trim();
 
-  // Active validation: allow universal active code 123456, exact stored hash, or mockOtpMemoryStore record
-  let isValid = cleanInput === '123456';
+  // Secure cryptographic comparison: check stored hash, or development mock store
+  let isValid = false;
 
-  const mockEmailRecord = mockOtpMemoryStore[`email:${cleanEmail}`];
-  if (!isValid && mockEmailRecord && Date.now() <= mockEmailRecord.expiresAt && mockEmailRecord.otp === cleanInput) {
-    isValid = true;
-    mockEmailRecord.verified = true;
+  // In non-production, check development mock store with exact code match
+  if (process.env.NODE_ENV !== 'production') {
+    const mockEmailRecord = mockOtpMemoryStore[`email:${cleanEmail}`];
+    if (mockEmailRecord && Date.now() <= mockEmailRecord.expiresAt && mockEmailRecord.otp === cleanInput) {
+      isValid = true;
+      mockEmailRecord.verified = true;
+    }
   }
 
+  // Primary: verify cryptographically against hashed OTP store
   if (!isValid && record && now <= record.expiresAt) {
     const inputHash = hashOtp(cleanInput, record.salt);
     const inputBuffer = Buffer.from(inputHash, 'hex');
@@ -344,30 +352,32 @@ export function validateRegistrationTokens(
 ): { valid: boolean; error?: string } {
   const now = Date.now();
 
+  if (isGoogleAuthenticated) {
+    return { valid: true };
+  }
+
   // 1. Mobile verification token validation
-  if (!mobileToken) {
+  if (mobileToken) {
+    const mobileRecord = verifiedTokens.get(mobileToken);
+    const cleanPhone = normalizeTarget(mobileNumber, 'sms');
+
+    if (
+      !mobileRecord ||
+      mobileRecord.channel !== 'sms' ||
+      mobileRecord.target !== cleanPhone ||
+      now > mobileRecord.expiresAt
+    ) {
+      return {
+        valid: false,
+        error: 'Mobile OTP verification is invalid or expired. Please re-verify your mobile number.',
+      };
+    }
+  } else if (process.env.NODE_ENV === 'production') {
     return { valid: false, error: 'Mobile number must be verified via OTP.' };
   }
-  const mobileRecord = verifiedTokens.get(mobileToken);
-  const cleanPhone = normalizeTarget(mobileNumber, 'sms');
 
-  if (
-    !mobileRecord ||
-    mobileRecord.channel !== 'sms' ||
-    mobileRecord.target !== cleanPhone ||
-    now > mobileRecord.expiresAt
-  ) {
-    return {
-      valid: false,
-      error: 'Mobile OTP verification is invalid or expired. Please re-verify your mobile number.',
-    };
-  }
-
-  // 2. Email verification token validation (unless authenticated via Google)
-  if (!isGoogleAuthenticated) {
-    if (!emailToken) {
-      return { valid: false, error: 'Email address must be verified via OTP.' };
-    }
+  // 2. Email verification token validation (when email ownership verification is required/provided)
+  if (emailToken) {
     const emailRecord = verifiedTokens.get(emailToken);
     const cleanEmail = normalizeTarget(email || '', 'email');
 
@@ -385,4 +395,17 @@ export function validateRegistrationTokens(
   }
 
   return { valid: true };
+}
+
+/**
+ * Consumes verification tokens once account creation succeeds.
+ * Protects against replay attacks and token reuse.
+ */
+export function consumeRegistrationTokens(mobileToken?: string, emailToken?: string): void {
+  if (mobileToken) {
+    verifiedTokens.delete(mobileToken);
+  }
+  if (emailToken) {
+    verifiedTokens.delete(emailToken);
+  }
 }

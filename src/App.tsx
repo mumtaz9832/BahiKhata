@@ -84,6 +84,7 @@ import { SalesView } from './components/SalesView';
 import { PartiesView } from './components/PartiesView';
 import { ItemsView } from './components/ItemsView';
 import { ReportsView } from './components/ReportsView';
+import { LegalAndComplianceModal, LegalTab } from './components/LegalAndComplianceModal';
 import {
   FileText,
   FileCheck2,
@@ -217,6 +218,13 @@ export default function App() {
   const [isSubscriptionOpen, setIsSubscriptionOpen] = useState<boolean>(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
   const [isQuickQROpen, setIsQuickQROpen] = useState<boolean>(false);
+  const [isLegalModalOpen, setIsLegalModalOpen] = useState<boolean>(false);
+  const [legalInitialTab, setLegalInitialTab] = useState<LegalTab>('privacy');
+
+  const handleOpenLegal = (tab: LegalTab = 'privacy') => {
+    setLegalInitialTab(tab);
+    setIsLegalModalOpen(true);
+  };
 
   // Multilingual & Subscription States
   const [lang, setLang] = useState<AppLanguage>(() => getLanguagePreference());
@@ -551,7 +559,7 @@ export default function App() {
     }
   };
 
-  // Complete Single Business Registration
+  // Complete Single Business Registration with exact 8-field payload
   const handleCompleteSingleRegistration = async (data: RegistrationData) => {
     const effectiveUserId = user?.uid || data.userId || `biz_${Date.now()}`;
     const nowIso = new Date().toISOString();
@@ -559,17 +567,21 @@ export default function App() {
     const updatedProf: BusinessProfile = {
       ...profile,
       userId: effectiveUserId,
-      fullName: data.fullName,
+      fullName: data.name || data.fullName,
       name: data.businessName,
       businessName: data.businessName,
       mobileNumber: data.mobileNumber,
       phone: data.mobileNumber,
       email: data.email,
-      businessAddress: data.businessAddress,
-      address: data.businessAddress,
-      gstNumber: data.gstNumber || undefined,
-      gstin: data.gstNumber || undefined,
-      gstRegistered: Boolean(data.gstNumber),
+      businessAddress: data.address || data.businessAddress,
+      address: data.address || data.businessAddress,
+      gstNumber: data.gstin || data.gstNumber || undefined,
+      gstin: data.gstin || data.gstNumber || undefined,
+      gstRegistered: Boolean(data.gstin || data.gstNumber),
+      category: data.category,
+      subcategory: data.subcategory,
+      industryCategory: data.subcategory,
+      businessType: data.category === 'Service' ? 'service' : 'sales',
       mobileVerified: true,
       emailVerified: true,
       registrationCompleted: true,
@@ -578,8 +590,20 @@ export default function App() {
       updatedAt: nowIso,
     };
 
+    const isAuto = Boolean(
+      data.subcategory?.toLowerCase().includes('auto') ||
+      data.subcategory?.toLowerCase().includes('two-wheeler') ||
+      data.subcategory?.toLowerCase().includes('car dealer') ||
+      data.subcategory?.toLowerCase().includes('electric vehicles') ||
+      data.subcategory?.toLowerCase().includes('commercial vehicles')
+    );
+    setMode(isAuto ? 'auto_dealer' : 'general_retail');
+
     setProfile(updatedProf);
     saveBusinessProfile(updatedProf);
+    const updatedBusinesses = saveBusiness(updatedProf);
+    setBusinesses(updatedBusinesses);
+
     localStorage.setItem('bizcore_authenticated', 'true');
     localStorage.setItem('bahikhata_authenticated', 'true');
     localStorage.removeItem('bizcore_guest_mode');
@@ -1728,39 +1752,49 @@ export default function App() {
 
       {/* Footer */}
       <footer className="bg-white border-t border-slate-200 py-4 px-4 sm:px-6 text-center text-xs text-slate-500 no-print mt-auto">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
-          <p className="flex items-center gap-1.5">
-            <span className="font-bold text-slate-800">BIZCORE</span> &bull; Complete Business Management Software with Billing, POS, Inventory &amp; Accounting.
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3">
+          <p className="flex items-center gap-1.5 flex-wrap justify-center md:justify-start">
+            <span className="font-bold text-slate-800">BIZCORE</span> &bull; Production Business Management Software &bull; All Rights Reserved.
           </p>
-          <div className="flex items-center gap-4 text-slate-400">
+          <div className="flex flex-wrap items-center justify-center gap-3 text-slate-500">
+            <button
+              type="button"
+              onClick={() => handleOpenLegal('privacy')}
+              className="hover:text-slate-800 underline cursor-pointer"
+            >
+              Privacy Policy
+            </button>
+            <span>&bull;</span>
+            <button
+              type="button"
+              onClick={() => handleOpenLegal('terms')}
+              className="hover:text-slate-800 underline cursor-pointer"
+            >
+              Terms of Service
+            </button>
+            <span>&bull;</span>
+            <button
+              type="button"
+              onClick={() => handleOpenLegal('refund')}
+              className="hover:text-slate-800 underline cursor-pointer"
+            >
+              Refund Policy
+            </button>
+            <span>&bull;</span>
+            <button
+              type="button"
+              onClick={() => handleOpenLegal('support')}
+              className="hover:text-slate-800 underline cursor-pointer"
+            >
+              Support &amp; Grievance
+            </button>
+            <span>&bull;</span>
             <button
               type="button"
               onClick={() => setIsSubscriptionOpen(true)}
               className="hover:text-amber-700 underline flex items-center gap-1 cursor-pointer font-semibold text-amber-800"
             >
               <span>{subscription.tier !== 'free' ? '★ Pro Active' : 'Upgrade to Pro'}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsDriveModalOpen(true)}
-              className="hover:text-blue-600 underline flex items-center gap-1 cursor-pointer"
-            >
-              <Cloud className="w-3.5 h-3.5 text-blue-500" />
-              <span>Google Drive Hub</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsKhataOpen(true)}
-              className="hover:text-slate-700 underline cursor-pointer"
-            >
-              Digital Khata
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsDrawerOpen(true)}
-              className="hover:text-slate-700 underline cursor-pointer font-medium text-slate-600"
-            >
-              More Settings &rarr;
             </button>
           </div>
         </div>
@@ -1797,6 +1831,7 @@ export default function App() {
         onOpenDriveModal={() => setIsDriveModalOpen(true)}
         onOpenBackupModal={() => setIsBackupModalOpen(true)}
         onOpenAdminPanel={() => setIsAdminPanelOpen(true)}
+        onOpenLegal={handleOpenLegal}
         onOpenKhata={() => setIsKhataOpen(true)}
         onOpenQuickQR={() => setIsQuickQROpen(true)}
         pendingBalanceCount={pendingCount}
@@ -1878,7 +1913,7 @@ export default function App() {
         onSave={handleSaveProfile}
         onClearAllData={handleClearAllData}
         onOpenRegistrationWizard={() => {
-          setIsMultiStepRegistrationOpen(true);
+          setIsSingleRegistrationOpen(true);
         }}
         onOpenBackupModal={() => setIsBackupModalOpen(true)}
         onOpenAdminPanel={() => setIsAdminPanelOpen(true)}
@@ -1905,6 +1940,15 @@ export default function App() {
         isUploadingCurrent={isUploadingToDrive}
       />
 
+      {/* DPDP Legal & Privacy Compliance Modal */}
+      <LegalAndComplianceModal
+        isOpen={isLegalModalOpen}
+        onClose={() => setIsLegalModalOpen(false)}
+        initialTab={legalInitialTab}
+        lang={lang}
+        onDataPurged={handleDataRestored}
+      />
+
       {/* Professional Authentication Welcome Screen on Startup */}
       <WelcomeScreen
         isOpen={isWelcomeScreenOpen}
@@ -1914,7 +1958,7 @@ export default function App() {
         }}
         onOpenRegister={() => {
           setIsWelcomeScreenOpen(false);
-          setIsMultiStepRegistrationOpen(true);
+          setIsSingleRegistrationOpen(true);
         }}
         onContinueAsGuest={() => {
           localStorage.setItem('bizcore_guest_mode', 'true');
@@ -1936,7 +1980,7 @@ export default function App() {
         }}
         onOpenRegister={() => {
           setIsAuthModalOpen(false);
-          setIsMultiStepRegistrationOpen(true);
+          setIsSingleRegistrationOpen(true);
         }}
         onOpenAdminPanel={() => {
           setIsAuthModalOpen(false);

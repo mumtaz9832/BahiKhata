@@ -19,6 +19,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { openWhatsAppCustomerReminder } from '../utils/whatsapp';
+import { getBusinessProfile } from '../utils/storage';
 
 interface PartiesViewProps {
   customers: CustomerRecord[];
@@ -44,6 +45,7 @@ export const PartiesView: React.FC<PartiesViewProps> = ({
   const isHindi = lang === 'hi';
   const [internalSearch, setInternalSearch] = useState('');
   const [filterType, setFilterType] = useState<'ALL' | 'DUE' | 'SETTLED'>('ALL');
+  const [partyCategory, setPartyCategory] = useState<'ALL' | 'CUSTOMER' | 'SUPPLIER'>('ALL');
   const [selectedParty, setSelectedParty] = useState<CustomerRecord | null>(null);
 
   const activeSearch = (searchQuery || internalSearch).toLowerCase().trim();
@@ -63,28 +65,40 @@ export const PartiesView: React.FC<PartiesViewProps> = ({
     });
 
     let totalBilled = 0;
-    let totalDue = 0;
+    let invoiceDue = 0;
 
     matchingInvoices.forEach((inv) => {
       if (inv.mode === 'auto_dealer' && inv.autoData) {
         totalBilled += inv.autoData.pricing.totalSaleValue || 0;
-        totalDue += inv.autoData.pricing.balanceAmount || 0;
+        invoiceDue += inv.autoData.pricing.balanceAmount || 0;
       } else if (inv.retailData) {
         totalBilled += inv.retailData.grandTotal || 0;
-        totalDue += inv.retailData.balanceAmount || 0;
+        invoiceDue += inv.retailData.balanceAmount || 0;
       }
     });
+
+    // Determine final dues taking into account opening balances and persisted ledger balance
+    const isSupplier = c.partyType === 'supplier';
+    const totalDue = isSupplier
+      ? 0
+      : (c.balanceDue !== undefined && c.balanceDue > 0 ? c.balanceDue : (c.openingBalance || 0) + invoiceDue);
+    const totalPayable = isSupplier
+      ? (c.supplierPayable !== undefined && c.supplierPayable > 0 ? c.supplierPayable : (c.openingBalance || 0))
+      : 0;
 
     return {
       customer: c,
       invoices: matchingInvoices,
       totalBilled,
       totalDue,
+      totalPayable,
+      isSupplier,
     };
   });
 
   // Calculate totals
   const totalReceivable = customerStats.reduce((sum, item) => sum + item.totalDue, 0);
+  const totalPayableSum = customerStats.reduce((sum, item) => sum + item.totalPayable, 0);
   const dueCustomersCount = customerStats.filter((item) => item.totalDue > 0).length;
 
   // Filter
@@ -97,31 +111,49 @@ export const PartiesView: React.FC<PartiesViewProps> = ({
       (c.city && c.city.toLowerCase().includes(activeSearch)) ||
       (c.gstin && c.gstin.toLowerCase().includes(activeSearch));
 
+    const matchesCategory =
+      partyCategory === 'ALL' ||
+      (partyCategory === 'CUSTOMER' && c.partyType !== 'supplier') ||
+      (partyCategory === 'SUPPLIER' && c.partyType === 'supplier');
+
+    const outstanding = item.isSupplier ? item.totalPayable : item.totalDue;
     const matchesFilter =
       filterType === 'ALL' ||
-      (filterType === 'DUE' && item.totalDue > 0) ||
-      (filterType === 'SETTLED' && item.totalDue === 0);
+      (filterType === 'DUE' && outstanding > 0) ||
+      (filterType === 'SETTLED' && outstanding === 0);
 
-    return matchesSearch && matchesFilter;
+    return matchesSearch && matchesCategory && matchesFilter;
   });
 
+  const sanitizeCsvValue = (val: any): string => {
+    if (val === null || val === undefined) return '""';
+    let str = String(val).replace(/"/g, '""');
+    // Formula injection protection: prepend single quote if cell starts with dangerous prefix
+    if (/^[=+\-@\t\r]/.test(str)) {
+      str = "'" + str;
+    }
+    return `"${str}"`;
+  };
+
   const handleExportParties = () => {
-    const headers = ['Party Name', 'Phone', 'City', 'GSTIN', 'ID Type', 'ID Number', 'Total Bills', 'Balance Due'];
+    const headers = ['Party Name', 'Party Type', 'Phone', 'City', 'GSTIN', 'ID Type', 'ID Number', 'Total Bills', 'Receivable Due (INR)', 'Payable Due (INR)'];
     const rows = filteredParties.map((p) => [
-      `"${p.customer.fullName}"`,
-      `"${p.customer.phone}"`,
-      `"${p.customer.city || ''}"`,
-      `"${p.customer.gstin || ''}"`,
-      `"${p.customer.idType || ''}"`,
-      `"${p.customer.idNumber || ''}"`,
+      sanitizeCsvValue(p.customer.fullName),
+      sanitizeCsvValue(p.isSupplier ? 'Supplier' : 'Customer'),
+      sanitizeCsvValue(p.customer.phone),
+      sanitizeCsvValue(p.customer.city || ''),
+      sanitizeCsvValue(p.customer.gstin || ''),
+      sanitizeCsvValue(p.customer.idType || ''),
+      sanitizeCsvValue(p.customer.idNumber || ''),
       p.invoices.length,
       p.totalDue,
+      p.totalPayable,
     ]);
     const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Parties_Ledger_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `BIZCORE_Parties_Ledger_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -172,18 +204,18 @@ export const PartiesView: React.FC<PartiesViewProps> = ({
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white p-4.5 rounded-2xl border border-slate-200/90 shadow-2xs">
           <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-            {isHindi ? 'कुल ग्राहक (Total Parties)' : 'Total Registered Parties'}
+            {isHindi ? 'कुल पार्टियां (Total Parties)' : 'Total Registered Parties'}
           </div>
           <div className="text-2xl font-black text-slate-900">{customers.length}</div>
           <div className="text-[11px] text-slate-500 mt-0.5">
-            {customerStats.filter((p) => p.invoices.length > 0).length}{' '}
-            {isHindi ? 'सक्रिय ग्राहक' : 'with active billing history'}
+            {customers.filter((c) => c.partyType !== 'supplier').length} {isHindi ? 'ग्राहक' : 'Customers'} •{' '}
+            {customers.filter((c) => c.partyType === 'supplier').length} {isHindi ? 'आपूर्तिकर्ता' : 'Suppliers'}
           </div>
         </div>
 
         <div className="bg-white p-4.5 rounded-2xl border border-amber-200/80 bg-amber-50/20 shadow-2xs">
           <div className="text-[11px] font-bold uppercase tracking-wider text-amber-700 mb-1">
-            {isHindi ? 'कुल उधारी बाकी (Receivables)' : 'Total Khata Balance Due'}
+            {isHindi ? 'ग्राहक उधारी बाकी (Receivables)' : 'Customer Receivables (To Collect)'}
           </div>
           <div className="text-2xl font-black text-amber-800">
             ₹{totalReceivable.toLocaleString('en-IN')}
@@ -193,52 +225,84 @@ export const PartiesView: React.FC<PartiesViewProps> = ({
           </div>
         </div>
 
-        <div className="bg-white p-4.5 rounded-2xl border border-emerald-200/80 bg-emerald-50/20 shadow-2xs">
-          <div className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 mb-1">
-            {isHindi ? 'खाता स्थिति' : 'Settlement Ratio'}
+        <div className="bg-white p-4.5 rounded-2xl border border-indigo-200/80 bg-indigo-50/20 shadow-2xs">
+          <div className="text-[11px] font-bold uppercase tracking-wider text-indigo-700 mb-1">
+            {isHindi ? 'सप्लायर देय राशि (Payables)' : 'Supplier Payables (To Pay)'}
           </div>
-          <div className="text-2xl font-black text-emerald-800">
-            {customers.length > 0
-              ? Math.round(((customers.length - dueCustomersCount) / customers.length) * 100)
-              : 100}
-            %
+          <div className="text-2xl font-black text-indigo-800">
+            ₹{totalPayableSum.toLocaleString('en-IN')}
           </div>
-          <div className="text-[11px] text-emerald-600 mt-0.5">
-            {customers.length - dueCustomersCount} {isHindi ? 'ग्राहकों का खाता चुकता' : 'parties fully settled'}
+          <div className="text-[11px] text-indigo-700 mt-0.5">
+            {customers.filter((c) => c.partyType === 'supplier' && (c.supplierPayable || c.openingBalance || 0) > 0).length}{' '}
+            {isHindi ? 'आपूर्तिकर्ताओं को भुगतान करना है' : 'suppliers to be paid'}
           </div>
         </div>
       </div>
 
       {/* 3. Filters & Search */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl">
-          <button
-            type="button"
-            onClick={() => setFilterType('ALL')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              filterType === 'ALL' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600'
-            }`}
-          >
-            {isHindi ? 'सभी पार्टियां' : 'All Parties'} ({customers.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setFilterType('DUE')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              filterType === 'DUE' ? 'bg-white text-amber-700 shadow-2xs' : 'text-slate-600'
-            }`}
-          >
-            {isHindi ? 'उधारी वाले (Due)' : 'With Balance Due'} ({dueCustomersCount})
-          </button>
-          <button
-            type="button"
-            onClick={() => setFilterType('SETTLED')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              filterType === 'SETTLED' ? 'bg-white text-emerald-700 shadow-2xs' : 'text-slate-600'
-            }`}
-          >
-            {isHindi ? 'चुकता' : 'Settled'}
-          </button>
+      <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Category Toggle */}
+          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl">
+            <button
+              type="button"
+              onClick={() => setPartyCategory('ALL')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                partyCategory === 'ALL' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600'
+              }`}
+            >
+              {isHindi ? 'सभी' : 'All'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setPartyCategory('CUSTOMER')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                partyCategory === 'CUSTOMER' ? 'bg-white text-emerald-800 shadow-2xs' : 'text-slate-600'
+              }`}
+            >
+              {isHindi ? 'ग्राहक' : 'Customers'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setPartyCategory('SUPPLIER')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                partyCategory === 'SUPPLIER' ? 'bg-white text-indigo-800 shadow-2xs' : 'text-slate-600'
+              }`}
+            >
+              {isHindi ? 'आपूर्तिकर्ता' : 'Suppliers'}
+            </button>
+          </div>
+
+          {/* Status Toggle */}
+          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl">
+            <button
+              type="button"
+              onClick={() => setFilterType('ALL')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                filterType === 'ALL' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600'
+              }`}
+            >
+              {isHindi ? 'सभी स्थिति' : 'All Status'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterType('DUE')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                filterType === 'DUE' ? 'bg-white text-amber-700 shadow-2xs' : 'text-slate-600'
+              }`}
+            >
+              {isHindi ? 'उधारी / देय' : 'Outstanding'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterType('SETTLED')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                filterType === 'SETTLED' ? 'bg-white text-emerald-700 shadow-2xs' : 'text-slate-600'
+              }`}
+            >
+              {isHindi ? 'चुकता' : 'Settled'}
+            </button>
+          </div>
         </div>
 
         <div className="relative flex-1 sm:w-64">
@@ -297,11 +361,28 @@ export const PartiesView: React.FC<PartiesViewProps> = ({
                     <tr key={c.id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="py-3.5 px-4 font-bold text-slate-900">
                         <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-800 font-bold flex items-center justify-center text-xs">
+                          <div
+                            className={`w-7 h-7 rounded-lg font-bold flex items-center justify-center text-xs ${
+                              item.isSupplier
+                                ? 'bg-indigo-100 text-indigo-800'
+                                : 'bg-emerald-100 text-emerald-800'
+                            }`}
+                          >
                             {c.fullName.charAt(0).toUpperCase()}
                           </div>
                           <div>
-                            <div>{c.fullName}</div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span>{c.fullName}</span>
+                              <span
+                                className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full ${
+                                  item.isSupplier
+                                    ? 'bg-indigo-100 text-indigo-700'
+                                    : 'bg-emerald-100 text-emerald-700'
+                                }`}
+                              >
+                                {item.isSupplier ? 'Supplier' : 'Customer'}
+                              </span>
+                            </div>
                             {c.email && <div className="text-[10px] text-slate-400 font-normal">{c.email}</div>}
                           </div>
                         </div>
@@ -346,12 +427,28 @@ export const PartiesView: React.FC<PartiesViewProps> = ({
                         </span>
                       </td>
                       <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                        {item.totalDue > 0 ? (
-                          <span className="font-mono font-black text-amber-700 text-sm">
-                            ₹{item.totalDue.toLocaleString('en-IN')}
-                          </span>
+                        {item.isSupplier ? (
+                          item.totalPayable > 0 ? (
+                            <div>
+                              <span className="font-mono font-black text-indigo-700 text-sm">
+                                ₹{item.totalPayable.toLocaleString('en-IN')}
+                              </span>
+                              <div className="text-[9px] text-indigo-600 font-bold uppercase tracking-wider">To Pay (देना है)</div>
+                            </div>
+                          ) : (
+                            <span className="text-emerald-600 font-bold text-xs">{isHindi ? 'चुकता' : 'Settled'}</span>
+                          )
                         ) : (
-                          <span className="text-emerald-600 font-bold text-xs">{isHindi ? 'चुकता' : 'Settled'}</span>
+                          item.totalDue > 0 ? (
+                            <div>
+                              <span className="font-mono font-black text-amber-700 text-sm">
+                                ₹{item.totalDue.toLocaleString('en-IN')}
+                              </span>
+                              <div className="text-[9px] text-amber-600 font-bold uppercase tracking-wider">To Collect (लेना है)</div>
+                            </div>
+                          ) : (
+                            <span className="text-emerald-600 font-bold text-xs">{isHindi ? 'चुकता' : 'Settled'}</span>
+                          )
                         )}
                       </td>
                       <td className="py-3.5 px-4 text-right whitespace-nowrap">
@@ -375,7 +472,8 @@ export const PartiesView: React.FC<PartiesViewProps> = ({
                                 if (latestInv) {
                                   openWhatsAppCustomerReminder(latestInv);
                                 } else {
-                                  const text = `Namaste ${c.fullName}, this is a gentle reminder regarding your pending balance of Rs. ${item.totalDue} with Apex Motors. Kindly settle at your earliest convenience. Thank you!`;
+                                  const sellerName = getBusinessProfile()?.name || 'our business';
+                                  const text = `Namaste ${c.fullName}, this is a gentle reminder regarding your pending balance of Rs. ${item.totalDue} with ${sellerName}. Kindly settle at your earliest convenience. Thank you!`;
                                   window.open(`https://wa.me/${c.phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(text)}`, '_blank');
                                 }
                               }}

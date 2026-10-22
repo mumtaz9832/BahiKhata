@@ -17,7 +17,7 @@ export interface SyncStateInfo {
 
 export type AppLanguage = 'en' | 'hi';
 
-export type SubscriptionTier = 'free' | 'pro_monthly' | 'pro_yearly';
+export type SubscriptionTier = 'free' | 'pro_monthly' | 'pro_half_yearly' | 'pro_yearly';
 
 export interface SubscriptionState {
   tier: SubscriptionTier;
@@ -60,6 +60,8 @@ export interface BusinessProfile {
   name: string; // Business/Shop name
   businessName?: string; // Explicit alias for registration form
   tagline: string;
+  category?: 'Sales' | 'Service'; // Required Category: Sales or Service
+  subcategory?: string; // Subcategory belonging to Category
   industryCategory?: string; // e.g., 'Scrap & Recycling', 'Construction & Building', etc.
   industryType?: string; // backward compat
   subcategories?: string[]; // Dynamic subcategories selected
@@ -409,5 +411,112 @@ export interface RestoreResult {
     productsRestored: number;
     businessesRestored: number;
   };
+}
+
+// --------------------------------------------------------------------------
+// EXPENSES & PURCHASES
+// --------------------------------------------------------------------------
+
+export interface ExpenseRecord {
+  id: string;
+  businessId?: string;
+  date: string;
+  category: 'Rent' | 'Electricity & Water' | 'Staff Salary' | 'Transport & Logistics' | 'Marketing & Ads' | 'Office & Maintenance' | 'Taxes & Govt Fees' | 'Other Expense';
+  description: string;
+  amount: number;
+  paymentMode: PaymentMode;
+  receiptNumber?: string;
+  paidTo?: string;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface PurchaseItem {
+  id: string;
+  productId?: string;
+  description: string;
+  hsn?: string;
+  qty: number;
+  unit: string;
+  rate: number;
+  gstPercent: number;
+  amount: number;
+}
+
+export interface PurchaseRecord {
+  id: string;
+  businessId?: string;
+  purchaseNo: string;
+  billNo?: string;
+  supplierId?: string;
+  supplierName: string;
+  supplierPhone?: string;
+  supplierGstin?: string;
+  date: string;
+  items: PurchaseItem[];
+  subtotal: number;
+  totalGst: number;
+  grandTotal: number;
+  paidAmount: number;
+  balanceDue: number;
+  paymentMode: PaymentMode;
+  status: 'PAID' | 'PARTIAL' | 'UNPAID';
+  notes?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+// --------------------------------------------------------------------------
+// CREDIT NOTES & DEBIT NOTES (Sales & Purchase Returns)
+// --------------------------------------------------------------------------
+
+export interface CreditDebitNote {
+  id: string;
+  businessId?: string;
+  noteType: 'credit_note' | 'debit_note';
+  noteNo: string;
+  invoiceId?: string;
+  invoiceNo?: string;
+  partyId?: string;
+  partyName: string;
+  partyType: 'customer' | 'supplier';
+  date: string;
+  reason: string;
+  amount: number;
+  gstAmount: number;
+  totalAmount: number;
+  status: 'ISSUED' | 'APPLIED' | 'CANCELLED';
+  createdAt: string;
+}
+
+// --------------------------------------------------------------------------
+// SUBSCRIPTIONS & VERIFIED TRANSACTIONS
+// --------------------------------------------------------------------------
+
+export interface SubscriptionPaymentOrder {
+  orderId: string;
+  amount: number;
+  currency: string;
+  planTier: SubscriptionTier;
+  planName: string;
+  challengeToken: string;
+  provider: 'razorpay' | 'cashfree' | 'upi_gateway';
+  keyId: string;
+  createdAt: string;
+}
+
+export interface SubscriptionTransaction {
+  id: string;
+  orderId: string;
+  paymentId: string;
+  receiptNo: string;
+  planTier: SubscriptionTier;
+  amount: number;
+  currency: string;
+  date: string;
+  paymentMethod: string;
+  status: 'SUCCESS' | 'FAILED' | 'PENDING' | 'REFUNDED';
+  businessName: string;
+  expiresAt: string;
 }
 

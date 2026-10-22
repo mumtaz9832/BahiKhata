@@ -26,8 +26,8 @@ import {
   submitEmailOtp,
 } from '../services/otpClient';
 import {
-  verifyAdminCredentials,
-  setAdminLoggedIn,
+  authenticateAdminStep1,
+  authenticateAdminStep2,
   ADMIN_2FA_PHONE,
   ADMIN_2FA_EMAIL,
 } from '../utils/adminAuth';
@@ -79,6 +79,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [adminOtpCooldown, setAdminOtpCooldown] = useState<number>(0);
   const [isAdminOtpLoading, setIsAdminOtpLoading] = useState<boolean>(false);
   const [adminActiveDemoCode, setAdminActiveDemoCode] = useState<string>('');
+  const [adminChallengeId, setAdminChallengeId] = useState<string>('');
 
   useEffect(() => {
     if (otpCooldown <= 0) return;
@@ -226,15 +227,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     const cleanId = loginIdentifier.trim();
     const cleanPass = loginPassword.trim();
 
-    // Check if it's Admin credentials
-    if (verifyAdminCredentials(cleanId, cleanPass)) {
-      setAdminLoggedIn(true);
-      localStorage.setItem('bizcore_authenticated', 'true');
-      setInfoMessage(isHindi ? 'मास्टर एडमिन लॉगिन सफल!' : 'Master Admin authenticated successfully!');
-      setTimeout(() => {
-        onClose();
-        if (onOpenAdminPanel) onOpenAdminPanel();
-      }, 350);
+    // If Admin credentials entered in general login, route directly to Admin panel tab
+    if (cleanId.toLowerCase() === 'mumtazkhan1985' || cleanId.toLowerCase() === 'admin') {
+      setAuthTab('admin');
+      setAdminLoginId(cleanId);
+      setAdminPassword(cleanPass);
       return;
     }
 
@@ -278,7 +275,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     );
   };
 
-  // Handle Step 1: Admin Credentials Verification -> Advance to 2FA
+  // Handle Step 1: Admin Credentials Verification -> Advance to 2FA via server
   const handleAdminCredentialsSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
@@ -296,55 +293,58 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       return;
     }
 
-    if (verifyAdminCredentials(cleanId, cleanPass)) {
-      // Credentials verified! Move to Step 2: Two-Factor Authentication (2FA)
-      setIsAdmin2FaStep(true);
-      await sendAdmin2FaOtp();
-    } else {
-      setErrorMessage(
-        isHindi
-          ? 'अमान्य एडमिन लॉगिन आईडी या पासवर्ड। कृपया पुनः प्रयास करें।'
-          : 'Invalid Admin Login ID or Password. Access denied.'
-      );
-    }
-  };
-
-  // Dispatch 2FA OTP to 9647398509 and mumtazkhan9832@gmail.com
-  const sendAdmin2FaOtp = async () => {
     setIsAdminOtpLoading(true);
-    setErrorMessage(null);
+    const res = await authenticateAdminStep1(cleanId, cleanPass);
+    setIsAdminOtpLoading(false);
 
-    try {
-      // Dispatches to both registered Admin phone (9647398509) and email (mumtazkhan9832@gmail.com)
-      const [resPhone, resEmail] = await Promise.all([
-        requestMobileOtp(ADMIN_2FA_PHONE),
-        requestEmailOtp(ADMIN_2FA_EMAIL),
-      ]);
-
-      const code = resPhone.demoCode || resEmail.demoCode || '123456';
-      setAdminActiveDemoCode(code);
-      setAdminOtpCooldown(resPhone.resendCooldown || 30);
-      setAdminOtpCode('');
-      setIsAdminOtpLoading(false);
-      setInfoMessage(
-        isHindi
-          ? 'सुरक्षा OTP आपके अधिकृत मोबाइल व ईमेल पर भेजा गया है।'
-          : 'Two-Factor security code dispatched to authorized admin mobile & email.'
-      );
-    } catch {
-      setIsAdminOtpLoading(false);
-      setAdminActiveDemoCode('123456');
+    if (res.success && res.challengeId) {
+      setAdminChallengeId(res.challengeId);
+      if (res.demoCode) {
+        setAdminActiveDemoCode(res.demoCode);
+      }
+      setIsAdmin2FaStep(true);
       setAdminOtpCooldown(30);
       setAdminOtpCode('');
       setInfoMessage(
         isHindi
-          ? 'सुरक्षा OTP आपके अधिकृत मोबाइल व ईमेल पर भेजा गया है।'
-          : 'Two-Factor security code dispatched to authorized admin mobile & email.'
+          ? 'सुरक्षा OTP अधिकृत व्यवस्थापक संपर्क पर भेजा गया है।'
+          : 'Two-Factor security code dispatched to authorized admin contact.'
+      );
+    } else {
+      setErrorMessage(
+        res.error ||
+          (isHindi
+            ? 'अमान्य एडमिन लॉगिन आईडी या पासवर्ड। कृपया पुनः प्रयास करें।'
+            : 'Invalid Admin Login ID or Password. Access denied.')
       );
     }
   };
 
-  // Handle Step 2: Verify Admin 2FA OTP & Unlock Admin Panel
+  // Dispatch / Resend 2FA OTP via server
+  const sendAdmin2FaOtp = async () => {
+    if (adminOtpCooldown > 0 || isAdminOtpLoading) return;
+    setIsAdminOtpLoading(true);
+    setErrorMessage(null);
+
+    const res = await authenticateAdminStep1(adminLoginId.trim(), adminPassword.trim());
+    setIsAdminOtpLoading(false);
+
+    if (res.success && res.challengeId) {
+      setAdminChallengeId(res.challengeId);
+      if (res.demoCode) setAdminActiveDemoCode(res.demoCode);
+      setAdminOtpCooldown(30);
+      setAdminOtpCode('');
+      setInfoMessage(
+        isHindi
+          ? 'सुरक्षा OTP पुनः भेजा गया है।'
+          : 'Two-Factor security code dispatched to authorized admin contact.'
+      );
+    } else {
+      setErrorMessage(res.error || 'Failed to dispatch security code.');
+    }
+  };
+
+  // Handle Step 2: Verify Admin 2FA OTP & Unlock Admin Panel via server token
   const handleVerifyAdmin2Fa = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanCode = adminOtpCode.trim();
@@ -360,72 +360,34 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setErrorMessage(null);
     setIsAdminOtpLoading(true);
 
-    try {
-      const [verifyPhoneRes, verifyEmailRes] = await Promise.all([
-        submitMobileOtp(ADMIN_2FA_PHONE, cleanCode),
-        submitEmailOtp(ADMIN_2FA_EMAIL, cleanCode),
-      ]);
+    const res = await authenticateAdminStep2(adminChallengeId, cleanCode);
+    setIsAdminOtpLoading(false);
 
-      const isSuccess =
-        verifyPhoneRes.success ||
-        verifyEmailRes.success ||
-        cleanCode === adminActiveDemoCode ||
-        cleanCode === '123456';
+    if (res.success) {
+      localStorage.setItem('bizcore_authenticated', 'true');
+      setInfoMessage(
+        isHindi
+          ? '2FA सत्यापन सफल! एडमिन पोर्टल खुल रहा है...'
+          : 'Two-Factor Authentication verified! Opening Admin Panel...'
+      );
+      setAdminLoginId('');
+      setAdminPassword('');
+      setAdminOtpCode('');
+      setIsAdmin2FaStep(false);
 
-      setIsAdminOtpLoading(false);
-
-      if (isSuccess) {
-        setAdminLoggedIn(true);
-        localStorage.setItem('bizcore_authenticated', 'true');
-        setInfoMessage(
-          isHindi
-            ? '2FA सत्यापन सफल! एडमिन पोर्टल खुल रहा है...'
-            : 'Two-Factor Authentication verified! Opening Admin Panel...'
-        );
-        // Clear sensitive inputs so next access requires manual entry
-        setAdminLoginId('');
-        setAdminPassword('');
-        setAdminOtpCode('');
-        setIsAdmin2FaStep(false);
-
-        setTimeout(() => {
-          onClose();
-          if (onOpenAdminPanel) {
-            onOpenAdminPanel();
-          }
-        }, 300);
-      } else {
-        setErrorMessage(
-          isHindi
+      setTimeout(() => {
+        onClose();
+        if (onOpenAdminPanel) {
+          onOpenAdminPanel();
+        }
+      }, 300);
+    } else {
+      setErrorMessage(
+        res.error ||
+          (isHindi
             ? 'अमान्य 2FA सुरक्षा OTP कोड। कृपया सही 6-अंकीय कोड दर्ज करें।'
-            : 'Invalid 2FA security OTP code. Please enter the valid 6-digit code.'
-        );
-      }
-    } catch {
-      setIsAdminOtpLoading(false);
-      if (cleanCode === adminActiveDemoCode || cleanCode === '123456') {
-        setAdminLoggedIn(true);
-        localStorage.setItem('bizcore_authenticated', 'true');
-        setInfoMessage(
-          isHindi
-            ? '2FA सत्यापन सफल! एडमिन पोर्टल खुल रहा है...'
-            : 'Two-Factor Authentication verified! Opening Admin Panel...'
-        );
-        setAdminLoginId('');
-        setAdminPassword('');
-        setAdminOtpCode('');
-        setIsAdmin2FaStep(false);
-        setTimeout(() => {
-          onClose();
-          if (onOpenAdminPanel) onOpenAdminPanel();
-        }, 300);
-      } else {
-        setErrorMessage(
-          isHindi
-            ? 'अमान्य 2FA सुरक्षा कोड। कृपया पुनः प्रयास करें।'
-            : 'Invalid 2FA security code. Please try again.'
-        );
-      }
+            : 'Invalid 2FA security OTP code. Please enter the valid 6-digit code.')
+      );
     }
   };
 

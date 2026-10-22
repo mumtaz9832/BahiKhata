@@ -11,6 +11,10 @@ import {
   BackupInspectionResult,
   RestoreResult,
   StorageStatistics,
+  ExpenseRecord,
+  PurchaseRecord,
+  CreditDebitNote,
+  SubscriptionTransaction,
 } from '../types';
 import {
   doc,
@@ -34,6 +38,10 @@ const STORAGE_KEY_PRODUCTS = 'bahikhata_products_v2';
 const STORAGE_KEY_LAST_BACKUP = 'bizcore_last_backup_meta_v1';
 const STORAGE_KEY_SAFETY_SNAPSHOT = 'bizcore_safety_rollback_snapshot_v1';
 const STORAGE_KEY_PENDING_QUEUE = 'bizcore_pending_sync_queue_v1';
+const STORAGE_KEY_EXPENSES = 'bizcore_expenses_v1';
+const STORAGE_KEY_PURCHASES = 'bizcore_purchases_v1';
+const STORAGE_KEY_CREDIT_DEBIT_NOTES = 'bizcore_credit_debit_notes_v1';
+const STORAGE_KEY_SUBSCRIPTION_TXS = 'bizcore_subscription_txs_v1';
 
 export interface PendingSyncMutation {
   id: string;
@@ -178,6 +186,10 @@ let memorySubscription: SubscriptionState | null = null;
 let memoryLanguage: AppLanguage | null = null;
 let memoryCustomers: CustomerRecord[] | null = null;
 let memoryProducts: ProductRecord[] | null = null;
+let memoryExpenses: ExpenseRecord[] | null = null;
+let memoryPurchases: PurchaseRecord[] | null = null;
+let memoryCreditDebitNotes: CreditDebitNote[] | null = null;
+let memorySubscriptionTxs: SubscriptionTransaction[] | null = null;
 
 
 export function getLanguagePreference(): AppLanguage {
@@ -1003,6 +1015,57 @@ export function saveInvoice(invoice: SavedInvoice): SavedInvoice[] {
 
     const all = getSavedInvoices();
     const index = all.findIndex((item) => item.id === prepared.id);
+
+    // If new invoice, automatically deduct inventory and update customer dues
+    if (index < 0 && prepared.status !== 'CANCELLED' && prepared.status !== 'RETURNED') {
+      // 1. Deduct retail items from product stock
+      if (prepared.retailData?.items) {
+        prepared.retailData.items.forEach((item) => {
+          if (!item.qty || item.qty <= 0) return;
+          const prods = getSavedProducts(activeBizId);
+          const matchedProd = prods.find(
+            (p) =>
+              (item.id && p.id === item.id) ||
+              (p.name && item.description && p.name.trim().toLowerCase() === item.description.trim().toLowerCase())
+          );
+          if (matchedProd) {
+            adjustProductStock(matchedProd.id, {
+              type: 'stock_out',
+              qty: item.qty,
+              reason: `Sale Invoice: ${prepared.invoiceNo}`,
+            });
+          }
+        });
+      }
+
+      // 2. Adjust customer balance due if partial/credit payment
+      const custPhone =
+        prepared.mode === 'auto_dealer'
+          ? prepared.autoData?.buyer.phone
+          : prepared.retailData?.customer.phone;
+      const custName =
+        prepared.mode === 'auto_dealer'
+          ? prepared.autoData?.buyer.fullName
+          : prepared.retailData?.customer.fullName;
+      const balAmount =
+        prepared.mode === 'auto_dealer'
+          ? prepared.autoData?.pricing.balanceAmount || 0
+          : prepared.retailData?.balanceAmount || 0;
+
+      if ((custPhone || custName) && balAmount > 0) {
+        const custs = getSavedCustomers(activeBizId);
+        const matchedCust = custs.find(
+          (c) =>
+            (custPhone && c.phone === custPhone) ||
+            (custName && c.fullName.toLowerCase() === custName.toLowerCase())
+        );
+        if (matchedCust) {
+          matchedCust.balanceDue = (matchedCust.balanceDue || 0) + balAmount;
+          saveCustomer(matchedCust);
+        }
+      }
+    }
+
     let updated: SavedInvoice[];
     if (index >= 0) {
       updated = [...all];
@@ -1051,6 +1114,46 @@ export function cancelInvoice(
     const target = all.find((inv) => inv.id === invoiceId);
     if (!target) return { all };
 
+    if (target.status !== 'CANCELLED') {
+      // 1. Reverse inventory deductions (add items back to stock)
+      if (target.retailData?.items) {
+        target.retailData.items.forEach((item) => {
+          if (!item.qty || item.qty <= 0) return;
+          const prods = getSavedProducts(target.businessId);
+          const matchedProd = prods.find(
+            (p) =>
+              (item.id && p.id === item.id) ||
+              (p.name && item.description && p.name.trim().toLowerCase() === item.description.trim().toLowerCase())
+          );
+          if (matchedProd) {
+            adjustProductStock(matchedProd.id, {
+              type: 'stock_in',
+              qty: item.qty,
+              reason: `Invoice Cancelled (${target.invoiceNo}): ${reason}`,
+            });
+          }
+        });
+      }
+
+      // 2. Reverse customer balance due if it was unpaid
+      const bal =
+        target.mode === 'auto_dealer'
+          ? target.autoData?.pricing.balanceAmount || 0
+          : target.retailData?.balanceAmount || 0;
+      if (bal > 0) {
+        const custPhone =
+          target.mode === 'auto_dealer'
+            ? target.autoData?.buyer.phone
+            : target.retailData?.customer.phone;
+        const custs = getSavedCustomers(target.businessId);
+        const matchedCust = custs.find((c) => c.phone === custPhone);
+        if (matchedCust) {
+          matchedCust.balanceDue = Math.max(0, (matchedCust.balanceDue || 0) - bal);
+          saveCustomer(matchedCust);
+        }
+      }
+    }
+
     target.status = 'CANCELLED';
     target.cancellationReason = reason;
     target.cancelledAt = new Date().toISOString();
@@ -1072,6 +1175,76 @@ export function returnInvoice(
     const all = getSavedInvoices();
     const target = all.find((inv) => inv.id === invoiceId);
     if (!target) return { all };
+
+    if (target.status !== 'RETURNED') {
+      // 1. Restore returned stock
+      if (target.retailData?.items) {
+        target.retailData.items.forEach((item) => {
+          if (!item.qty || item.qty <= 0) return;
+          const prods = getSavedProducts(target.businessId);
+          const matchedProd = prods.find(
+            (p) =>
+              (item.id && p.id === item.id) ||
+              (p.name && item.description && p.name.trim().toLowerCase() === item.description.trim().toLowerCase())
+          );
+          if (matchedProd) {
+            adjustProductStock(matchedProd.id, {
+              type: 'stock_in',
+              qty: item.qty,
+              reason: `Sales Return (${target.invoiceNo}): ${reason}`,
+            });
+          }
+        });
+      }
+
+      // 2. Issue Credit Note
+      const returnAmount =
+        target.mode === 'auto_dealer'
+          ? target.autoData?.pricing.totalSaleValue || 0
+          : target.retailData?.grandTotal || 0;
+      const gstAmount =
+        target.mode === 'auto_dealer' ? 0 : target.retailData?.totalGst || 0;
+      const custName =
+        target.mode === 'auto_dealer'
+          ? target.autoData?.buyer.fullName || 'Customer'
+          : target.retailData?.customer.fullName || 'Customer';
+      const custPhone =
+        target.mode === 'auto_dealer'
+          ? target.autoData?.buyer.phone
+          : target.retailData?.customer.phone;
+
+      saveCreditDebitNote({
+        id: `cn_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        businessId: target.businessId,
+        noteType: 'credit_note',
+        noteNo: `CN-${target.invoiceNo.replace(/^INV-/, '')}`,
+        invoiceId: target.id,
+        invoiceNo: target.invoiceNo,
+        partyName: custName,
+        partyType: 'customer',
+        date: new Date().toISOString().slice(0, 10),
+        reason,
+        amount: returnAmount - gstAmount,
+        gstAmount,
+        totalAmount: returnAmount,
+        status: 'ISSUED',
+        createdAt: new Date().toISOString(),
+      });
+
+      // 3. Reverse customer balance due
+      const bal =
+        target.mode === 'auto_dealer'
+          ? target.autoData?.pricing.balanceAmount || 0
+          : target.retailData?.balanceAmount || 0;
+      if (bal > 0 && custPhone) {
+        const custs = getSavedCustomers(target.businessId);
+        const matchedCust = custs.find((c) => c.phone === custPhone);
+        if (matchedCust) {
+          matchedCust.balanceDue = Math.max(0, (matchedCust.balanceDue || 0) - bal);
+          saveCustomer(matchedCust);
+        }
+      }
+    }
 
     target.status = 'RETURNED';
     target.cancellationReason = reason;
@@ -2047,6 +2220,250 @@ export async function initializeHybridStorage(): Promise<void> {
     }
   } catch (err) {
     console.warn('Hybrid storage reconciliation error:', err);
+  }
+}
+
+// --------------------------------------------------------------------------
+// EXPENSE MANAGEMENT
+// --------------------------------------------------------------------------
+
+export function getSavedExpenses(businessId?: string): ExpenseRecord[] {
+  let all: ExpenseRecord[] = [];
+  if (memoryExpenses) {
+    all = memoryExpenses;
+  } else {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_EXPENSES);
+      all = raw ? JSON.parse(raw) : [];
+      memoryExpenses = all;
+    } catch {
+      all = [];
+    }
+  }
+  const targetBizId = businessId || getActiveBusinessId();
+  return all.filter((exp) => !exp.businessId || exp.businessId === targetBizId);
+}
+
+export function saveExpense(expense: ExpenseRecord): ExpenseRecord[] {
+  try {
+    const activeBizId = expense.businessId || getActiveBusinessId();
+    const prepared: ExpenseRecord = {
+      ...expense,
+      businessId: activeBizId,
+    };
+    const all = getSavedExpenses();
+    const index = all.findIndex((e) => e.id === prepared.id);
+    let updated: ExpenseRecord[];
+    if (index >= 0) {
+      updated = [...all];
+      updated[index] = prepared;
+    } else {
+      updated = [prepared, ...all];
+    }
+    memoryExpenses = updated;
+    localStorage.setItem(STORAGE_KEY_EXPENSES, JSON.stringify(updated));
+    idbSet(STORAGE_KEY_EXPENSES, updated);
+    return updated;
+  } catch (err) {
+    console.error('Error saving expense:', err);
+    return getSavedExpenses();
+  }
+}
+
+export function deleteExpense(id: string): ExpenseRecord[] {
+  try {
+    const all = getSavedExpenses();
+    const updated = all.filter((e) => e.id !== id);
+    memoryExpenses = updated;
+    localStorage.setItem(STORAGE_KEY_EXPENSES, JSON.stringify(updated));
+    idbSet(STORAGE_KEY_EXPENSES, updated);
+    return updated;
+  } catch (err) {
+    console.error('Error deleting expense:', err);
+    return getSavedExpenses();
+  }
+}
+
+// --------------------------------------------------------------------------
+// PURCHASE REGISTER & INVENTORY ADDITIONS
+// --------------------------------------------------------------------------
+
+export function getSavedPurchases(businessId?: string): PurchaseRecord[] {
+  let all: PurchaseRecord[] = [];
+  if (memoryPurchases) {
+    all = memoryPurchases;
+  } else {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_PURCHASES);
+      all = raw ? JSON.parse(raw) : [];
+      memoryPurchases = all;
+    } catch {
+      all = [];
+    }
+  }
+  const targetBizId = businessId || getActiveBusinessId();
+  return all.filter((p) => !p.businessId || p.businessId === targetBizId);
+}
+
+export function savePurchase(purchase: PurchaseRecord): PurchaseRecord[] {
+  try {
+    const activeBizId = purchase.businessId || getActiveBusinessId();
+    const prepared: PurchaseRecord = {
+      ...purchase,
+      businessId: activeBizId,
+      updatedAt: new Date().toISOString(),
+    };
+    const all = getSavedPurchases();
+    const index = all.findIndex((p) => p.id === prepared.id);
+
+    // If new purchase, automatically add stock to products
+    if (index < 0 && prepared.items) {
+      prepared.items.forEach((item) => {
+        if (!item.qty || item.qty <= 0) return;
+        const prods = getSavedProducts(activeBizId);
+        const matchedProd = prods.find(
+          (p) =>
+            (item.productId && p.id === item.productId) ||
+            (p.name &&
+              item.description &&
+              p.name.trim().toLowerCase() === item.description.trim().toLowerCase())
+        );
+        if (matchedProd) {
+          adjustProductStock(matchedProd.id, {
+            type: 'stock_in',
+            qty: item.qty,
+            reason: `Purchase Bill: ${prepared.purchaseNo}`,
+          });
+        }
+      });
+
+      // If supplier payable balance due, update supplier record
+      if (prepared.supplierPhone || prepared.supplierName) {
+        const custs = getSavedCustomers(activeBizId);
+        const matchedSupplier = custs.find(
+          (c) =>
+            (prepared.supplierPhone && c.phone === prepared.supplierPhone) ||
+            (prepared.supplierName &&
+              c.fullName.toLowerCase() === prepared.supplierName.toLowerCase())
+        );
+        if (matchedSupplier && prepared.balanceDue > 0) {
+          matchedSupplier.supplierPayable =
+            (matchedSupplier.supplierPayable || 0) + prepared.balanceDue;
+          saveCustomer(matchedSupplier);
+        }
+      }
+    }
+
+    let updated: PurchaseRecord[];
+    if (index >= 0) {
+      updated = [...all];
+      updated[index] = prepared;
+    } else {
+      updated = [prepared, ...all];
+    }
+    memoryPurchases = updated;
+    localStorage.setItem(STORAGE_KEY_PURCHASES, JSON.stringify(updated));
+    idbSet(STORAGE_KEY_PURCHASES, updated);
+    return updated;
+  } catch (err) {
+    console.error('Error saving purchase:', err);
+    return getSavedPurchases();
+  }
+}
+
+export function deletePurchase(id: string): PurchaseRecord[] {
+  try {
+    const all = getSavedPurchases();
+    const updated = all.filter((p) => p.id !== id);
+    memoryPurchases = updated;
+    localStorage.setItem(STORAGE_KEY_PURCHASES, JSON.stringify(updated));
+    idbSet(STORAGE_KEY_PURCHASES, updated);
+    return updated;
+  } catch (err) {
+    console.error('Error deleting purchase:', err);
+    return getSavedPurchases();
+  }
+}
+
+// --------------------------------------------------------------------------
+// CREDIT NOTES & DEBIT NOTES (Sales & Purchase Returns)
+// --------------------------------------------------------------------------
+
+export function getSavedCreditDebitNotes(businessId?: string): CreditDebitNote[] {
+  let all: CreditDebitNote[] = [];
+  if (memoryCreditDebitNotes) {
+    all = memoryCreditDebitNotes;
+  } else {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_CREDIT_DEBIT_NOTES);
+      all = raw ? JSON.parse(raw) : [];
+      memoryCreditDebitNotes = all;
+    } catch {
+      all = [];
+    }
+  }
+  const targetBizId = businessId || getActiveBusinessId();
+  return all.filter((n) => !n.businessId || n.businessId === targetBizId);
+}
+
+export function saveCreditDebitNote(note: CreditDebitNote): CreditDebitNote[] {
+  try {
+    const activeBizId = note.businessId || getActiveBusinessId();
+    const prepared: CreditDebitNote = {
+      ...note,
+      businessId: activeBizId,
+    };
+    const all = getSavedCreditDebitNotes();
+    const index = all.findIndex((n) => n.id === prepared.id);
+    let updated: CreditDebitNote[];
+    if (index >= 0) {
+      updated = [...all];
+      updated[index] = prepared;
+    } else {
+      updated = [prepared, ...all];
+    }
+    memoryCreditDebitNotes = updated;
+    localStorage.setItem(STORAGE_KEY_CREDIT_DEBIT_NOTES, JSON.stringify(updated));
+    idbSet(STORAGE_KEY_CREDIT_DEBIT_NOTES, updated);
+    return updated;
+  } catch (err) {
+    console.error('Error saving credit/debit note:', err);
+    return getSavedCreditDebitNotes();
+  }
+}
+
+// --------------------------------------------------------------------------
+// SUBSCRIPTION TRANSACTION RECORDS
+// --------------------------------------------------------------------------
+
+export function getSubscriptionTransactions(): SubscriptionTransaction[] {
+  let all: SubscriptionTransaction[] = [];
+  if (memorySubscriptionTxs) {
+    all = memorySubscriptionTxs;
+  } else {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_SUBSCRIPTION_TXS);
+      all = raw ? JSON.parse(raw) : [];
+      memorySubscriptionTxs = all;
+    } catch {
+      all = [];
+    }
+  }
+  return all;
+}
+
+export function recordSubscriptionTransaction(
+  tx: SubscriptionTransaction
+): SubscriptionTransaction[] {
+  try {
+    const all = getSubscriptionTransactions();
+    const updated = [tx, ...all.filter((t) => t.id !== tx.id)];
+    memorySubscriptionTxs = updated;
+    localStorage.setItem(STORAGE_KEY_SUBSCRIPTION_TXS, JSON.stringify(updated));
+    idbSet(STORAGE_KEY_SUBSCRIPTION_TXS, updated);
+    return updated;
+  } catch {
+    return getSubscriptionTransactions();
   }
 }
 

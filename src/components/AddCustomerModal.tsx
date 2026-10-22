@@ -35,7 +35,8 @@ export const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
-  // Form states
+  const [partyType, setPartyType] = useState<'customer' | 'supplier'>('customer');
+  const [openingBalance, setOpeningBalance] = useState<string>('0');
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [altPhone, setAltPhone] = useState('');
@@ -52,6 +53,8 @@ export const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
   if (!isOpen) return null;
 
   const handleResetForm = () => {
+    setPartyType('customer');
+    setOpeningBalance('0');
     setFullName('');
     setPhone('');
     setAltPhone('');
@@ -68,14 +71,19 @@ export const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
   const handleSubmit = (e: React.FormEvent, createBillAfter = false) => {
     e.preventDefault();
     if (!fullName.trim() || !phone.trim()) {
-      alert('Please enter both customer name and phone number.');
+      alert('Please enter both party name and phone number.');
       return;
     }
 
+    const opBalNum = parseFloat(openingBalance) || 0;
     const newCustomer: CustomerRecord = {
       id: 'cust_' + Date.now(),
       fullName: fullName.trim(),
       phone: phone.trim(),
+      partyType,
+      openingBalance: opBalNum,
+      balanceDue: partyType === 'customer' ? opBalNum : 0,
+      supplierPayable: partyType === 'supplier' ? opBalNum : 0,
       altPhone: altPhone.trim() || undefined,
       email: email.trim() || undefined,
       idType,
@@ -90,7 +98,7 @@ export const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
     };
 
     onSaveCustomer(newCustomer);
-    setSuccessMsg('Customer saved successfully!');
+    setSuccessMsg(partyType === 'supplier' ? 'Supplier added successfully!' : 'Customer added successfully!');
     setTimeout(() => setSuccessMsg(''), 2500);
 
     if (createBillAfter && onSelectCustomerForBill) {
@@ -173,17 +181,74 @@ export const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 text-xs text-slate-700">
           {activeTab === 'add' ? (
             <form onSubmit={(e) => handleSubmit(e, false)} className="space-y-4">
+              {/* Party Type & Opening Balance Selector */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-3">
+                <div>
+                  <label className="block font-bold text-slate-800 mb-1.5">
+                    Party Type (खाता प्रकार) <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPartyType('customer')}
+                      className={`py-2 px-3 rounded-lg font-bold text-xs border text-center transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                        partyType === 'customer'
+                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                      }`}
+                    >
+                      <span>Customer / Buyer (ग्राहक)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPartyType('supplier')}
+                      className={`py-2 px-3 rounded-lg font-bold text-xs border text-center transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                        partyType === 'supplier'
+                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                      }`}
+                    >
+                      <span>Supplier / Vendor (आपूर्तिकर्ता)</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-800 mb-1">
+                    Opening Balance (प्रारंभिक शेष) (₹)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-2 font-bold text-slate-400">₹</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={openingBalance}
+                      onChange={(e) => setOpeningBalance(e.target.value)}
+                      placeholder="0.00"
+                      className="w-full pl-7 pr-3 py-2 bg-white border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    {partyType === 'customer'
+                      ? 'Positive value = Customer owes you (Receivable / लेना है)'
+                      : 'Positive value = You owe supplier (Payable / देना है)'}
+                  </p>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block font-bold text-slate-800 mb-1">
-                    Customer Full Name <span className="text-rose-500">*</span>
+                    {partyType === 'supplier' ? 'Supplier / Firm Name' : 'Customer Full Name'}{' '}
+                    <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="text"
                     required
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
-                    placeholder="e.g. Ramesh Chandra Verma"
+                    placeholder={partyType === 'supplier' ? 'e.g. Apex Steel & Scrap Traders' : 'e.g. Ramesh Chandra Verma'}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
                   />
                 </div>
@@ -374,11 +439,27 @@ export const AddCustomerModal: React.FC<AddCustomerModalProps> = ({
                       className="p-3 bg-white hover:bg-slate-50/80 transition-colors flex items-start justify-between gap-3"
                     >
                       <div className="space-y-1">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-bold text-slate-900 text-sm">{cust.fullName}</span>
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                              cust.partyType === 'supplier'
+                                ? 'bg-indigo-100 text-indigo-800'
+                                : 'bg-emerald-100 text-emerald-800'
+                            }`}
+                          >
+                            {cust.partyType === 'supplier' ? 'Supplier' : 'Customer'}
+                          </span>
                           {cust.idType && cust.idNumber && (
                             <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-mono">
                               {cust.idType}: {cust.idNumber}
+                            </span>
+                          )}
+                          {((cust.balanceDue || 0) > 0 || (cust.supplierPayable || 0) > 0 || (cust.openingBalance || 0) > 0) && (
+                            <span className="text-[10px] font-bold font-mono px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">
+                              {cust.partyType === 'supplier'
+                                ? `Payable: ₹${(cust.supplierPayable || cust.openingBalance || 0).toLocaleString('en-IN')}`
+                                : `Due: ₹${(cust.balanceDue || cust.openingBalance || 0).toLocaleString('en-IN')}`}
                             </span>
                           )}
                         </div>

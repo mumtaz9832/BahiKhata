@@ -48,6 +48,7 @@ interface SlideOverDrawerProps {
   onOpenDriveModal: () => void;
   onOpenBackupModal?: () => void;
   onOpenAdminPanel?: () => void;
+  onOpenLegal?: (tab?: 'privacy' | 'terms' | 'subscription' | 'refund' | 'data' | 'support') => void;
   onOpenKhata: () => void;
   onOpenQuickQR: () => void;
   pendingBalanceCount: number;
@@ -75,6 +76,7 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
   onOpenDriveModal,
   onOpenBackupModal,
   onOpenAdminPanel,
+  onOpenLegal,
   onOpenKhata,
   onOpenQuickQR,
   pendingBalanceCount,
@@ -389,6 +391,34 @@ export const SlideOverDrawer: React.FC<SlideOverDrawerProps> = ({
                     </div>
                   </div>
                   <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-white transition-transform group-hover:translate-x-0.5" />
+                </button>
+              )}
+
+              {/* Legal & Privacy Compliance */}
+              {onOpenLegal && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenLegal('privacy');
+                  }}
+                  className="w-full flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition-all text-left cursor-pointer group"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-teal-50 text-teal-700 flex items-center justify-center group-hover:bg-teal-600 group-hover:text-white transition-colors">
+                      <ShieldCheck className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                        <span>Legal, Privacy &amp; Data Rights</span>
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 bg-teal-100 text-teal-800 rounded">
+                          DPDP Ready
+                        </span>
+                      </h4>
+                      <p className="text-[11px] text-slate-500">Terms, Refund Policy, Data Export &amp; Erasure</p>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-slate-700 transition-transform group-hover:translate-x-0.5" />
                 </button>
               )}
             </div>
