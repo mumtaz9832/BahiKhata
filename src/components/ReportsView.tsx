@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { SavedInvoice, BusinessProfile, AppLanguage } from '../types';
+import { SavedInvoice, BusinessProfile, AppLanguage, CustomerRecord } from '../types';
 import {
   BarChart3,
   Download,
@@ -11,17 +11,20 @@ import {
   PieChart,
   CheckCircle2,
   TrendingUp,
+  Users,
 } from 'lucide-react';
 import { SalesPerformanceChart } from './SalesPerformanceChart';
 
 interface ReportsViewProps {
   invoices: SavedInvoice[];
+  customers?: CustomerRecord[];
   profile: BusinessProfile;
   lang: AppLanguage;
 }
 
 export const ReportsView: React.FC<ReportsViewProps> = ({
   invoices,
+  customers = [],
   profile,
   lang,
 }) => {
@@ -96,6 +99,203 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   const cgst = totalGstCollected / 2;
   const sgst = totalGstCollected / 2;
 
+  // Helper to safely escape CSV cells and protect against formula injection
+  const escapeCsv = (val: any): string => {
+    if (val === undefined || val === null) return '""';
+    let str = String(val).trim();
+    if (/^[=\+\-@]/.test(str)) {
+      str = `'${str}`;
+    }
+    return `"${str.replace(/"/g, '""')}"`;
+  };
+
+  /**
+   * Export complete invoice history and customer data as a formatted CSV file
+   */
+  const handleExportCompleteCSV = () => {
+    const csvLines: string[] = [];
+
+    // Header metadata
+    csvLines.push(`# BIZCORE COMPLETE REPORT — INVOICE HISTORY & CUSTOMER DATA`);
+    csvLines.push(`# Business Name: ${escapeCsv(profile.name || 'BIZCORE Business')}`);
+    csvLines.push(`# GSTIN: ${escapeCsv(profile.gstin || 'Unregistered')}`);
+    csvLines.push(`# Exported At: ${escapeCsv(new Date().toLocaleString('en-IN'))}`);
+    csvLines.push(`# Filter Scope: ${escapeCsv(selectedRange)}`);
+    csvLines.push(`# Invoices Count: ${filteredInvoices.length} (out of ${invoices.length} total)`);
+    csvLines.push(`# Customers Count: ${customers.length}`);
+    csvLines.push('');
+
+    // SECTION 1: INVOICE HISTORY & LINE-ITEM TRANSACTIONS
+    csvLines.push('### SECTION 1: ENTIRE INVOICE HISTORY ###');
+    const invoiceHeaders = [
+      'Invoice Number',
+      'Invoice Date',
+      'Delivery Date',
+      'Delivery Time',
+      'Billing Mode',
+      'Payment Status',
+      'Customer / Buyer Name',
+      'Primary Mobile',
+      'Alternate Mobile',
+      'Customer Address',
+      'City',
+      'State',
+      'Pincode',
+      'ID Type',
+      'ID Number / GSTIN',
+      'Vehicle Details / Items Summary',
+      'Chassis / VIN Number',
+      'Engine / Motor Number',
+      'Odometer (KM)',
+      'Subtotal / Base Price (INR)',
+      'Taxes / RTO / Accessories (INR)',
+      'Discount (INR)',
+      'Grand Total Amount (INR)',
+      'Advance Paid (INR)',
+      'Balance Due (INR)',
+      'Payment Mode',
+      'Transaction Ref',
+      'Balance Due Date',
+      'Notes'
+    ];
+    csvLines.push(invoiceHeaders.map(escapeCsv).join(','));
+
+    filteredInvoices.forEach((inv) => {
+      const isAuto = inv.mode === 'auto_dealer';
+      const status = inv.status || 'UNPAID';
+
+      if (isAuto && inv.autoData) {
+        const { buyer, vehicle, pricing } = inv.autoData;
+        const vehicleDesc = `${vehicle.make || ''} ${vehicle.model || ''} ${vehicle.variant || ''} (${vehicle.color || ''})`.trim();
+        const row = [
+          inv.invoiceNo,
+          inv.invoiceDate,
+          inv.deliveryDate || '',
+          inv.deliveryTime || '',
+          'Auto Dealership',
+          status,
+          buyer.fullName || 'Auto Customer',
+          buyer.phone || '',
+          buyer.altPhone || '',
+          buyer.address || '',
+          buyer.city || '',
+          buyer.state || '',
+          buyer.pincode || '',
+          buyer.idType || '',
+          buyer.idNumber || '',
+          vehicleDesc || 'Vehicle',
+          vehicle.chassisNo || '',
+          vehicle.engineMotorNo || '',
+          vehicle.odometerKm || 0,
+          pricing.basePrice || 0,
+          (pricing.rtoCharges || 0) + (pricing.insuranceCharges || 0) + (pricing.accessoriesCharges || 0),
+          pricing.discount || 0,
+          pricing.totalSaleValue || pricing.netPayableAmount || 0,
+          pricing.advanceReceived || 0,
+          pricing.balanceAmount || 0,
+          pricing.paymentMode || 'UPI / QR',
+          pricing.transactionRef || '',
+          pricing.balanceDueDate || '',
+          pricing.notes || ''
+        ];
+        csvLines.push(row.map(escapeCsv).join(','));
+      } else if (inv.retailData) {
+        const { customer, items, grandTotal, subtotal, totalGst, discount, advanceReceived, balanceAmount, paymentMode, transactionRef, balanceDueDate, notes } = inv.retailData;
+        const itemsSummary = (items || []).map((it) => `${it.description || 'Item'} (x${it.qty ?? 1} ${it.unit || 'Pcs'})`).join('; ');
+        const row = [
+          inv.invoiceNo,
+          inv.invoiceDate,
+          inv.deliveryDate || '',
+          inv.deliveryTime || '',
+          'General Retail POS',
+          status,
+          customer.fullName || 'Walk-in Customer',
+          customer.phone || '',
+          '',
+          customer.address || '',
+          '',
+          '',
+          '',
+          customer.gstin ? 'GSTIN' : '',
+          customer.gstin || '',
+          itemsSummary || 'Retail Items',
+          '',
+          '',
+          '',
+          subtotal || 0,
+          totalGst || 0,
+          discount || 0,
+          grandTotal || 0,
+          advanceReceived || 0,
+          balanceAmount || 0,
+          paymentMode || 'UPI / QR',
+          transactionRef || '',
+          balanceDueDate || '',
+          notes || ''
+        ];
+        csvLines.push(row.map(escapeCsv).join(','));
+      }
+    });
+
+    // SECTION 2: CUSTOMERS DIRECTORY & KHATA BALANCES
+    if (customers && customers.length > 0) {
+      csvLines.push('');
+      csvLines.push('');
+      csvLines.push('### SECTION 2: CUSTOMERS DIRECTORY & KHATA BALANCES ###');
+      const customerHeaders = [
+        'Customer ID',
+        'Customer Full Name',
+        'Primary Phone',
+        'Alternate Phone',
+        'Email Address',
+        'Address',
+        'City',
+        'State',
+        'Pincode',
+        'ID Type',
+        'ID Number / GSTIN',
+        'Opening Balance (INR)',
+        'Current Balance Due (INR)',
+        'Party Type',
+        'Created Date'
+      ];
+      csvLines.push(customerHeaders.map(escapeCsv).join(','));
+
+      customers.forEach((c) => {
+        const cRow = [
+          c.id || '',
+          c.fullName || '',
+          c.phone || '',
+          c.altPhone || '',
+          c.email || '',
+          c.address || '',
+          c.city || '',
+          c.state || '',
+          c.pincode || '',
+          c.idType || '',
+          c.idNumber || c.gstin || '',
+          c.openingBalance || 0,
+          c.balanceDue || 0,
+          c.partyType || 'customer',
+          c.createdAt || ''
+        ];
+        csvLines.push(cRow.map(escapeCsv).join(','));
+      });
+    }
+
+    // Include UTF-8 BOM for Microsoft Excel & Google Sheets compatibility
+    const csvContent = '\uFEFF' + csvLines.join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `BIZCORE_Invoices_and_Customers_${todayStr}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   const handleExportGSTR1 = () => {
     const headers = ['Metric', 'Amount (INR)'];
     const rows = [
@@ -109,14 +309,16 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
       ['Total Collected Amount', totalAdvance],
       ['Total Pending Dues', totalDue],
     ];
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
+    link.setAttribute('href', url);
     link.setAttribute('download', `GSTR1_Summary_${todayStr}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const handlePrintReport = () => {
@@ -143,11 +345,23 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {/* Main User Requested 'Export to CSV' button */}
+          <button
+            type="button"
+            onClick={handleExportCompleteCSV}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer"
+            title={isHindi ? 'सभी इनवॉइस इतिहास और ग्राहक डेटा को CSV फ़ाइल में डाउनलोड करें' : 'Download complete invoice history and customer data as formatted CSV file'}
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-100" />
+            <span>{isHindi ? 'CSV में निर्यात करें (Export to CSV)' : 'Export to CSV'}</span>
+          </button>
+
           <button
             type="button"
             onClick={handleExportGSTR1}
             className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition-colors cursor-pointer border border-slate-200"
+            title={isHindi ? 'GSTR-1 टैक्स सारांश CSV डाउनलोड करें' : 'Download GSTR-1 tax audit summary as CSV'}
           >
             <Download className="w-3.5 h-3.5 text-slate-600" />
             <span>{isHindi ? 'GSTR-1 CSV' : 'Export GSTR-1'}</span>

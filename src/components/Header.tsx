@@ -51,7 +51,7 @@ interface HeaderProps {
   user?: User | null;
   onOpenAuthModal?: () => void;
   onSignOut?: () => void;
-  syncStatus?: 'synced' | 'offline';
+  syncStatus?: 'synced' | 'syncing' | 'offline' | 'pending' | 'error';
   profile?: BusinessProfile;
   invoices?: SavedInvoice[];
   onSelectInvoiceToView?: (invoice: SavedInvoice) => void;
@@ -516,9 +516,37 @@ export const Header: React.FC<HeaderProps> = ({
                     <span className="text-[11px] font-bold text-slate-800 leading-tight max-w-[90px] truncate">
                       {user.displayName || 'User'}
                     </span>
-                    <span className="flex items-center gap-1 text-[9px] text-emerald-600 font-bold leading-tight">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                      Cloud Synced
+                    <span className="flex items-center gap-1 text-[9px] font-bold leading-tight">
+                      {syncStatus === 'synced' && (
+                        <>
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                          <span className="text-emerald-600">Cloud Synced</span>
+                        </>
+                      )}
+                      {syncStatus === 'syncing' && (
+                        <>
+                          <span className="w-1.5 h-1.5 rounded-full bg-sky-500 animate-ping" />
+                          <span className="text-sky-600">Syncing...</span>
+                        </>
+                      )}
+                      {syncStatus === 'pending' && (
+                        <>
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                          <span className="text-amber-700">Pending Sync</span>
+                        </>
+                      )}
+                      {syncStatus === 'offline' && (
+                        <>
+                          <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                          <span className="text-slate-500">Offline</span>
+                        </>
+                      )}
+                      {syncStatus === 'error' && (
+                        <>
+                          <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                          <span className="text-rose-600">Sync Error</span>
+                        </>
+                      )}
                     </span>
                   </div>
                   <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform ${isUserMenuOpen ? 'rotate-180' : ''}`} />

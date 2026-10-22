@@ -17,6 +17,7 @@ import {
   AppView,
   CustomerRecord,
   ProductRecord,
+  SyncStateInfo,
 } from './types';
 import {
   getBusinessProfile,
@@ -46,6 +47,9 @@ import {
   getActiveBusinessId,
   setActiveBusinessId,
   saveBusiness,
+  getSyncState,
+  onSyncStateChange,
+  syncAllFromFirestore,
 } from './utils/storage';
 import { exportElementToPDF, triggerPrintDialog, generatePDFBlob } from './utils/pdfExport';
 import { initAuth, googleSignIn, logout, getAccessToken } from './utils/googleAuth';
@@ -276,8 +280,13 @@ export default function App() {
   const [emailShareNotice, setEmailShareNotice] = useState<{ filename: string; hasWebShare: boolean } | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
 
+  // Real-time Cloud Synchronization status state
+  const [syncState, setSyncState] = useState<SyncStateInfo>(getSyncState());
+
   // Load initial data & Auth state & Hybrid Storage reconciliation
   useEffect(() => {
+    const unsubSync = onSyncStateChange((st) => setSyncState(st));
+
     const loadedProfile = getBusinessProfile();
     setProfile(loadedProfile);
     const loadedInvoices = getSavedInvoices();
@@ -310,10 +319,13 @@ export default function App() {
         setAccessToken(token);
         setIsAuthLoading(false);
         if (authUser) {
-          // Check if remote profile exists in Firestore
-          const remoteProfile = await loadProfileFromFirestore(authUser.uid);
-          const activeProf = remoteProfile || getBusinessProfile();
+          // Sync all remote collections from Firestore and reconcile with local cache
+          await syncAllFromFirestore(authUser.uid);
+          const activeProf = getBusinessProfile();
           setProfile(activeProf);
+          setInvoices(getSavedInvoices());
+          setCustomers(getSavedCustomers());
+          setProducts(getSavedProducts());
 
           if (
             activeProf.registrationCompleted &&
@@ -342,6 +354,7 @@ export default function App() {
 
     return () => {
       unsubscribe();
+      unsubSync();
     };
   }, []);
 
@@ -1203,7 +1216,7 @@ export default function App() {
           user={user}
           onOpenAuthModal={() => setIsAuthModalOpen(true)}
           onSignOut={handleGoogleSignOut}
-          syncStatus={user ? 'synced' : 'offline'}
+          syncStatus={syncState.status}
           profile={profile}
         />
 
@@ -1219,7 +1232,7 @@ export default function App() {
               products={products}
               user={user}
               onOpenAuthModal={() => setIsAuthModalOpen(true)}
-              syncStatus={user ? 'synced' : 'offline'}
+              syncStatus={syncState.status === 'synced' ? 'synced' : 'offline'}
               onGenerateBill={() => {
                 handleNewInvoice();
                 setCurrentView('generate_bill');
@@ -1310,6 +1323,7 @@ export default function App() {
           {currentView === 'reports' && (
             <ReportsView
               invoices={invoices}
+              customers={customers}
               profile={profile}
               lang={lang}
             />

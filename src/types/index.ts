@@ -4,7 +4,16 @@ export type VehicleType = 'two_wheeler' | 'four_wheeler' | 'electric_vehicle' | 
 
 export type PaymentMode = 'Cash' | 'UPI / QR' | 'Cheque' | 'Bank Transfer (NEFT/IMPS)' | 'Finance / Loan';
 
-export type InvoiceStatus = 'PAID' | 'PARTIAL' | 'UNPAID';
+export type InvoiceStatus = 'PAID' | 'PARTIAL' | 'UNPAID' | 'CANCELLED' | 'RETURNED';
+
+export type CloudSyncStatus = 'synced' | 'syncing' | 'offline' | 'pending' | 'error';
+
+export interface SyncStateInfo {
+  status: CloudSyncStatus;
+  pendingCount: number;
+  lastSyncedAt?: string;
+  errorMessage?: string;
+}
 
 export type AppLanguage = 'en' | 'hi';
 
@@ -210,6 +219,10 @@ export interface RetailData {
   subtotal: number;
   discount: number;
   totalGst: number;
+  taxType?: 'intra_state' | 'inter_state';
+  cgst?: number;
+  sgst?: number;
+  igst?: number;
   grandTotal: number;
   advanceReceived: number;
   balanceAmount: number;
@@ -240,6 +253,9 @@ export interface SavedInvoice {
   retailData?: RetailData;
   businessProfile: BusinessProfile;
   status: InvoiceStatus;
+  cancellationReason?: string;
+  cancelledAt?: string;
+  isInterState?: boolean;
   paymentHistory: PaymentRecord[];
   createdAt: string;
   updatedAt: string;
@@ -305,6 +321,8 @@ export interface ProductRecord {
   serviceDuration?: string;
   assignedTechnician?: string;
   serviceWarranty?: string;
+
+  stockAdjustments?: { id: string; date: string; type: 'stock_in' | 'stock_out' | 'damage' | 'audit'; qty: number; reason: string }[];
 
   createdAt: string;
 }

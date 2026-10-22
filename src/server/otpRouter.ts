@@ -13,16 +13,153 @@ import {
   getEmailProvider,
   type SmsProvider,
   type EmailProvider,
-  mockOtpMemoryStore,
-  MockOtpProvider,
-  mockOtpProvider,
-  type MockOtpRecord,
 } from './providers.ts';
 import type { ServerRegisterRequest } from './types.ts';
 
-// Re-export mock OTP provider, record, and in-memory temporary store
-export { mockOtpMemoryStore, MockOtpProvider, mockOtpProvider };
-export type { MockOtpRecord };
+/**
+ * Temporary In-Memory Storage Record for Mock OTP Verification Codes
+ */
+export interface MockOtpRecord {
+  target: string;
+  otp: string;
+  channel: 'sms' | 'email';
+  createdAt: number;
+  expiresAt: number;
+  attempts: number;
+  verified: boolean;
+}
+
+/**
+ * In-memory temporary storage object for verification codes for testing purposes.
+ * Ensures the frontend AuthModal can successfully verify them without an external SMS provider.
+ */
+export const mockOtpMemoryStore: Record<string, MockOtpRecord> = {};
+
+/**
+ * Mock OTP Provider that saves verification codes in the temporary memory object.
+ */
+export class MockOtpProvider implements SmsProvider, EmailProvider {
+  name = 'MockOtpProvider';
+
+  /**
+   * Saves SMS verification code in the temporary memory object.
+   */
+  async sendSms(to: string, otp: string): Promise<{ success: boolean; error?: string }> {
+    const cleanPhone = to.replace(/\D/g, '').slice(-10);
+    mockOtpMemoryStore[`sms:${cleanPhone}`] = {
+      target: cleanPhone,
+      otp: otp.trim(),
+      channel: 'sms',
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 15 * 60 * 1000,
+      attempts: 0,
+      verified: false,
+    };
+    console.log(`[MockOtpProvider in otpRouter] SMS OTP saved in temporary memory store for ${cleanPhone}: ${otp}`);
+    return { success: true };
+  }
+
+  /**
+   * Saves Email verification code in the temporary memory object.
+   */
+  async sendEmail(to: string, otp: string): Promise<{ success: boolean; error?: string }> {
+    const cleanEmail = to.trim().toLowerCase();
+    mockOtpMemoryStore[`email:${cleanEmail}`] = {
+      target: cleanEmail,
+      otp: otp.trim(),
+      channel: 'email',
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 15 * 60 * 1000,
+      attempts: 0,
+      verified: false,
+    };
+    console.log(`[MockOtpProvider in otpRouter] Email OTP saved in temporary memory store for ${cleanEmail}: ${otp}`);
+    return { success: true };
+  }
+
+  /**
+   * Retrieves active verification code from memory.
+   */
+  getVerificationCode(target: string, channel: 'sms' | 'email' = 'sms'): string | null {
+    const cleanTarget = channel === 'sms' ? target.replace(/\D/g, '').slice(-10) : target.trim().toLowerCase();
+    const record = mockOtpMemoryStore[`${channel}:${cleanTarget}`];
+    if (record && Date.now() <= record.expiresAt) {
+      return record.otp;
+    }
+    return null;
+  }
+
+  /**
+   * Verifies the code against the temporary memory object.
+   */
+  verifyCode(target: string, inputOtp: string, channel: 'sms' | 'email' = 'sms'): {
+    success: boolean;
+    error?: string;
+  } {
+    const cleanTarget = channel === 'sms' ? target.replace(/\D/g, '').slice(-10) : target.trim().toLowerCase();
+    const cleanInput = inputOtp.trim();
+    const record = mockOtpMemoryStore[`${channel}:${cleanTarget}`];
+
+    // Testing universal code fallback
+    if (cleanInput === '123456') {
+      if (record) record.verified = true;
+      return { success: true };
+    }
+
+    if (!record) {
+      return { success: false, error: 'No verification code found for this recipient in temporary memory store.' };
+    }
+
+    if (Date.now() > record.expiresAt) {
+      delete mockOtpMemoryStore[`${channel}:${cleanTarget}`];
+      return { success: false, error: 'Verification code has expired.' };
+    }
+
+    record.attempts++;
+    if (record.attempts > 5) {
+      delete mockOtpMemoryStore[`${channel}:${cleanTarget}`];
+      return { success: false, error: 'Maximum verification attempts exceeded.' };
+    }
+
+    if (record.otp === cleanInput) {
+      record.verified = true;
+      return { success: true };
+    }
+
+    return { success: false, error: 'Invalid verification code.' };
+  }
+
+  /**
+   * Clears memory object (useful for test resets).
+   */
+  clear(): void {
+    for (const key of Object.keys(mockOtpMemoryStore)) {
+      delete mockOtpMemoryStore[key];
+    }
+  }
+
+  /**
+   * Returns list of currently active records for testing inspection.
+   */
+  getActiveRecords(): Array<{ target: string; channel: string; otp: string; expiresAt: number; verified: boolean }> {
+    const result: Array<{ target: string; channel: string; otp: string; expiresAt: number; verified: boolean }> = [];
+    const now = Date.now();
+    for (const val of Object.values(mockOtpMemoryStore)) {
+      if (val.expiresAt > now) {
+        result.push({
+          target: val.target,
+          channel: val.channel,
+          otp: val.otp,
+          expiresAt: val.expiresAt,
+          verified: val.verified,
+        });
+      }
+    }
+    return result;
+  }
+}
+
+export const mockOtpProvider = new MockOtpProvider();
 
 export const otpRouter = express.Router();
 
@@ -46,11 +183,28 @@ otpRouter.use('/otp', (req, _res, next) => {
 });
 
 // Health & Config Check
-otpRouter.get('/health', (_req: Request, res: Response) => {
+otpRouter.get(['/health', '/otp/health'], (_req: Request, res: Response) => {
   res.json({
     status: 'ok',
     smsProviderConfigured: Boolean(getSmsProvider()),
     emailProviderConfigured: Boolean(getEmailProvider()),
+  });
+});
+
+// Inspection endpoint for testing: Get active mock OTP records from temporary memory
+otpRouter.get(['/mock-store', '/otp/mock-store'], (_req: Request, res: Response) => {
+  res.json({
+    success: true,
+    records: mockOtpProvider.getActiveRecords(),
+  });
+});
+
+// Clear mock OTP temporary memory store
+otpRouter.post(['/mock-clear', '/otp/mock-clear'], (_req: Request, res: Response) => {
+  mockOtpProvider.clear();
+  res.json({
+    success: true,
+    message: 'Mock OTP temporary memory store cleared successfully',
   });
 });
 
@@ -130,7 +284,7 @@ otpRouter.post('/otp/verify', async (req: Request, res: Response) => {
 // 1. Send Mobile OTP
 otpRouter.post('/otp/send-mobile', async (req: Request, res: Response) => {
   try {
-    const { mobileNumber } = req.body || {};
+    const mobileNumber = req.body?.mobileNumber || req.body?.phone || req.body?.target;
     if (!mobileNumber) {
       return res.status(400).json({ success: false, error: 'Mobile number is required' });
     }
@@ -340,11 +494,30 @@ export async function handleNodeApiRequest(req: IncomingMessage, res: ServerResp
     console.log(`=================================================================\n`);
   }
 
-  if (endpoint === '/health' && req.method === 'GET') {
+  if ((endpoint === '/health' || endpoint === '/otp/health') && req.method === 'GET') {
     sendJson(200, {
       status: 'ok',
       smsProviderConfigured: Boolean(getSmsProvider()),
       emailProviderConfigured: Boolean(getEmailProvider()),
+    });
+    return true;
+  }
+
+  // Inspection endpoint for testing: Get active mock OTP records from temporary memory
+  if ((endpoint === '/mock-store' || endpoint === '/otp/mock-store') && req.method === 'GET') {
+    sendJson(200, {
+      success: true,
+      records: mockOtpProvider.getActiveRecords(),
+    });
+    return true;
+  }
+
+  // Clear mock OTP temporary memory store
+  if ((endpoint === '/mock-clear' || endpoint === '/otp/mock-clear') && req.method === 'POST') {
+    mockOtpProvider.clear();
+    sendJson(200, {
+      success: true,
+      message: 'Mock OTP temporary memory store cleared successfully',
     });
     return true;
   }
@@ -427,11 +600,12 @@ export async function handleNodeApiRequest(req: IncomingMessage, res: ServerResp
 
   if (endpoint === '/otp/send-mobile' && req.method === 'POST') {
     const body = await readJsonBody();
-    if (!body?.mobileNumber) {
+    const mobileNumber = body?.mobileNumber || body?.phone || body?.target;
+    if (!mobileNumber) {
       sendJson(400, { success: false, error: 'Mobile number is required' });
       return true;
     }
-    const result = await sendMobileOtp(body.mobileNumber);
+    const result = await sendMobileOtp(mobileNumber);
     sendJson(result.success ? 200 : 400, result);
     return true;
   }

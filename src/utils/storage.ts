@@ -12,8 +12,16 @@ import {
   RestoreResult,
   StorageStatistics,
 } from '../types';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { db } from './firebase';
+import {
+  doc,
+  getDoc,
+  setDoc,
+  deleteDoc,
+  collection,
+  getDocs,
+} from 'firebase/firestore';
+import { db, auth } from './firebase';
+import { SyncStateInfo, CloudSyncStatus } from '../types';
 
 const STORAGE_KEY_INVOICES = 'bahikhata_invoices_v2';
 const STORAGE_KEY_PROFILE = 'bahikhata_business_profile_v2';
@@ -25,6 +33,18 @@ const STORAGE_KEY_CUSTOMERS = 'bahikhata_customers_v2';
 const STORAGE_KEY_PRODUCTS = 'bahikhata_products_v2';
 const STORAGE_KEY_LAST_BACKUP = 'bizcore_last_backup_meta_v1';
 const STORAGE_KEY_SAFETY_SNAPSHOT = 'bizcore_safety_rollback_snapshot_v1';
+const STORAGE_KEY_PENDING_QUEUE = 'bizcore_pending_sync_queue_v1';
+
+export interface PendingSyncMutation {
+  id: string;
+  entity: 'invoice' | 'customer' | 'product' | 'profile';
+  action: 'set' | 'delete';
+  entityId: string;
+  data?: any;
+  timestamp: number;
+  retryCount: number;
+  error?: string;
+}
 
 const IDB_NAME = 'BahiKhata_DB';
 const IDB_VERSION = 1;
@@ -501,6 +521,442 @@ export async function loadProfileFromFirestore(
   return null;
 }
 
+// --- Persistent Offline Sync Queue & Cloud Sync Manager ---
+let activeSyncState: SyncStateInfo = {
+  status: typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'synced',
+  pendingCount: 0,
+};
+
+const syncListeners: ((state: SyncStateInfo) => void)[] = [];
+
+export function getSyncState(): SyncStateInfo {
+  const queue = getPendingSyncQueue();
+  return {
+    ...activeSyncState,
+    pendingCount: queue.length,
+    status:
+      typeof navigator !== 'undefined' && !navigator.onLine
+        ? 'offline'
+        : queue.length > 0 && activeSyncState.status === 'synced'
+        ? 'pending'
+        : activeSyncState.status,
+  };
+}
+
+export function onSyncStateChange(callback: (state: SyncStateInfo) => void): () => void {
+  syncListeners.push(callback);
+  callback(getSyncState());
+  return () => {
+    const idx = syncListeners.indexOf(callback);
+    if (idx >= 0) syncListeners.splice(idx, 1);
+  };
+}
+
+function notifySyncListeners(updates?: Partial<SyncStateInfo>) {
+  if (updates) {
+    activeSyncState = { ...activeSyncState, ...updates };
+  }
+  const state = getSyncState();
+  syncListeners.forEach((cb) => {
+    try {
+      cb(state);
+    } catch {}
+  });
+}
+
+export function getPendingSyncQueue(): PendingSyncMutation[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_PENDING_QUEUE);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return [];
+}
+
+export function enqueuePendingMutation(
+  mutation: Omit<PendingSyncMutation, 'id' | 'timestamp' | 'retryCount'>
+): void {
+  try {
+    const queue = getPendingSyncQueue();
+    const existingIdx = queue.findIndex(
+      (m) => m.entity === mutation.entity && m.entityId === mutation.entityId
+    );
+    const newRecord: PendingSyncMutation = {
+      ...mutation,
+      id: `mut_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      timestamp: Date.now(),
+      retryCount: 0,
+    };
+    if (existingIdx >= 0) {
+      queue[existingIdx] = newRecord;
+    } else {
+      queue.push(newRecord);
+    }
+    localStorage.setItem(STORAGE_KEY_PENDING_QUEUE, JSON.stringify(queue));
+    idbSet(STORAGE_KEY_PENDING_QUEUE, queue);
+    notifySyncListeners({ status: 'pending' });
+  } catch (err) {
+    console.error('Failed to enqueue pending mutation:', err);
+  }
+}
+
+export function dequeuePendingMutation(id: string): void {
+  try {
+    const queue = getPendingSyncQueue().filter((m) => m.id !== id);
+    localStorage.setItem(STORAGE_KEY_PENDING_QUEUE, JSON.stringify(queue));
+    idbSet(STORAGE_KEY_PENDING_QUEUE, queue);
+    notifySyncListeners();
+  } catch {}
+}
+
+export function clearPendingSyncQueue(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEY_PENDING_QUEUE);
+    idbSet(STORAGE_KEY_PENDING_QUEUE, []);
+    notifySyncListeners({ status: 'synced' });
+  } catch {}
+}
+
+// Background push to Firestore for Invoices
+export async function syncInvoiceToFirestore(invoice: SavedInvoice, userId?: string): Promise<boolean> {
+  const uid = userId || auth.currentUser?.uid || invoice.businessProfile?.userId;
+  if (!uid) return false;
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    enqueuePendingMutation({
+      entity: 'invoice',
+      action: 'set',
+      entityId: invoice.id,
+      data: invoice,
+    });
+    return false;
+  }
+  try {
+    const invRef = doc(db, 'users', uid, 'invoices', invoice.id);
+    await setDoc(invRef, invoice, { merge: true });
+    notifySyncListeners({ status: 'synced', lastSyncedAt: new Date().toISOString() });
+    return true;
+  } catch (err: any) {
+    console.warn('Firestore invoice push failed, queueing mutation:', err);
+    enqueuePendingMutation({
+      entity: 'invoice',
+      action: 'set',
+      entityId: invoice.id,
+      data: invoice,
+      error: err?.message,
+    });
+    return false;
+  }
+}
+
+export async function deleteInvoiceFromFirestore(invoiceId: string, userId?: string): Promise<boolean> {
+  const uid = userId || auth.currentUser?.uid;
+  if (!uid) return false;
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    enqueuePendingMutation({
+      entity: 'invoice',
+      action: 'delete',
+      entityId: invoiceId,
+    });
+    return false;
+  }
+  try {
+    const invRef = doc(db, 'users', uid, 'invoices', invoiceId);
+    await deleteDoc(invRef);
+    return true;
+  } catch (err: any) {
+    enqueuePendingMutation({
+      entity: 'invoice',
+      action: 'delete',
+      entityId: invoiceId,
+      error: err?.message,
+    });
+    return false;
+  }
+}
+
+// Background push to Firestore for Customers
+export async function syncCustomerToFirestore(customer: CustomerRecord, userId?: string): Promise<boolean> {
+  const uid = userId || auth.currentUser?.uid;
+  if (!uid) return false;
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    enqueuePendingMutation({
+      entity: 'customer',
+      action: 'set',
+      entityId: customer.id,
+      data: customer,
+    });
+    return false;
+  }
+  try {
+    const custRef = doc(db, 'users', uid, 'customers', customer.id);
+    await setDoc(custRef, customer, { merge: true });
+    return true;
+  } catch (err: any) {
+    enqueuePendingMutation({
+      entity: 'customer',
+      action: 'set',
+      entityId: customer.id,
+      data: customer,
+      error: err?.message,
+    });
+    return false;
+  }
+}
+
+export async function deleteCustomerFromFirestore(customerId: string, userId?: string): Promise<boolean> {
+  const uid = userId || auth.currentUser?.uid;
+  if (!uid) return false;
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    enqueuePendingMutation({
+      entity: 'customer',
+      action: 'delete',
+      entityId: customerId,
+    });
+    return false;
+  }
+  try {
+    const custRef = doc(db, 'users', uid, 'customers', customerId);
+    await deleteDoc(custRef);
+    return true;
+  } catch (err: any) {
+    enqueuePendingMutation({
+      entity: 'customer',
+      action: 'delete',
+      entityId: customerId,
+      error: err?.message,
+    });
+    return false;
+  }
+}
+
+// Background push to Firestore for Products
+export async function syncProductToFirestore(product: ProductRecord, userId?: string): Promise<boolean> {
+  const uid = userId || auth.currentUser?.uid;
+  if (!uid) return false;
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    enqueuePendingMutation({
+      entity: 'product',
+      action: 'set',
+      entityId: product.id,
+      data: product,
+    });
+    return false;
+  }
+  try {
+    const prodRef = doc(db, 'users', uid, 'products', product.id);
+    await setDoc(prodRef, product, { merge: true });
+    return true;
+  } catch (err: any) {
+    enqueuePendingMutation({
+      entity: 'product',
+      action: 'set',
+      entityId: product.id,
+      data: product,
+      error: err?.message,
+    });
+    return false;
+  }
+}
+
+export async function deleteProductFromFirestore(productId: string, userId?: string): Promise<boolean> {
+  const uid = userId || auth.currentUser?.uid;
+  if (!uid) return false;
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    enqueuePendingMutation({
+      entity: 'product',
+      action: 'delete',
+      entityId: productId,
+    });
+    return false;
+  }
+  try {
+    const prodRef = doc(db, 'users', uid, 'products', productId);
+    await deleteDoc(prodRef);
+    return true;
+  } catch (err: any) {
+    enqueuePendingMutation({
+      entity: 'product',
+      action: 'delete',
+      entityId: productId,
+      error: err?.message,
+    });
+    return false;
+  }
+}
+
+// Replays pending mutations queue in background
+export async function replayPendingSyncQueue(userId?: string): Promise<void> {
+  const uid = userId || auth.currentUser?.uid;
+  if (!uid) return;
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    notifySyncListeners({ status: 'offline' });
+    return;
+  }
+
+  const queue = getPendingSyncQueue();
+  if (queue.length === 0) {
+    notifySyncListeners({ status: 'synced', lastSyncedAt: new Date().toISOString() });
+    return;
+  }
+
+  notifySyncListeners({ status: 'syncing' });
+
+  for (const item of [...queue]) {
+    try {
+      if (item.entity === 'invoice') {
+        const ref = doc(db, 'users', uid, 'invoices', item.entityId);
+        if (item.action === 'set' && item.data) {
+          await setDoc(ref, item.data, { merge: true });
+        } else if (item.action === 'delete') {
+          await deleteDoc(ref);
+        }
+      } else if (item.entity === 'customer') {
+        const ref = doc(db, 'users', uid, 'customers', item.entityId);
+        if (item.action === 'set' && item.data) {
+          await setDoc(ref, item.data, { merge: true });
+        } else if (item.action === 'delete') {
+          await deleteDoc(ref);
+        }
+      } else if (item.entity === 'product') {
+        const ref = doc(db, 'users', uid, 'products', item.entityId);
+        if (item.action === 'set' && item.data) {
+          await setDoc(ref, item.data, { merge: true });
+        } else if (item.action === 'delete') {
+          await deleteDoc(ref);
+        }
+      } else if (item.entity === 'profile' && item.data) {
+        await syncProfileToFirestore(item.data, uid);
+      }
+      dequeuePendingMutation(item.id);
+    } catch (err: any) {
+      console.warn(`Retry failed for mutation ${item.id}:`, err);
+      item.retryCount = (item.retryCount || 0) + 1;
+      item.error = err?.message;
+      if (item.retryCount >= 5) {
+        dequeuePendingMutation(item.id);
+      }
+    }
+  }
+
+  const remaining = getPendingSyncQueue();
+  if (remaining.length === 0) {
+    notifySyncListeners({ status: 'synced', lastSyncedAt: new Date().toISOString() });
+  } else {
+    notifySyncListeners({ status: 'pending' });
+  }
+}
+
+// Bi-directional pull & merge all collections from Firestore on login
+export async function syncAllFromFirestore(userId: string): Promise<{
+  invoices: number;
+  customers: number;
+  products: number;
+}> {
+  if (!userId) return { invoices: 0, customers: 0, products: 0 };
+  notifySyncListeners({ status: 'syncing' });
+
+  try {
+    // 1. Pull Profile
+    await loadProfileFromFirestore(userId);
+
+    // 2. Pull Invoices
+    const invSnap = await getDocs(collection(db, 'users', userId, 'invoices'));
+    const remoteInvoices: SavedInvoice[] = [];
+    invSnap.forEach((docSnap) => {
+      remoteInvoices.push(docSnap.data() as SavedInvoice);
+    });
+
+    const localInvoices = getSavedInvoices();
+    const invMap = new Map(localInvoices.map((inv) => [inv.id, inv]));
+    remoteInvoices.forEach((rInv) => {
+      const local = invMap.get(rInv.id);
+      if (!local || (rInv.updatedAt || '') >= (local.updatedAt || '')) {
+        invMap.set(rInv.id, rInv);
+      }
+    });
+    const mergedInvoices = Array.from(invMap.values());
+    memoryInvoices = mergedInvoices;
+    localStorage.setItem(STORAGE_KEY_INVOICES, JSON.stringify(mergedInvoices));
+    idbSet(STORAGE_KEY_INVOICES, mergedInvoices);
+
+    // 3. Pull Customers
+    const custSnap = await getDocs(collection(db, 'users', userId, 'customers'));
+    const remoteCustomers: CustomerRecord[] = [];
+    custSnap.forEach((docSnap) => {
+      remoteCustomers.push(docSnap.data() as CustomerRecord);
+    });
+
+    const localCustomers = getSavedCustomers();
+    const custMap = new Map(localCustomers.map((c) => [c.id, c]));
+    remoteCustomers.forEach((rCust) => {
+      custMap.set(rCust.id, rCust);
+    });
+    const mergedCustomers = Array.from(custMap.values());
+    memoryCustomers = mergedCustomers;
+    localStorage.setItem(STORAGE_KEY_CUSTOMERS, JSON.stringify(mergedCustomers));
+    idbSet(STORAGE_KEY_CUSTOMERS, mergedCustomers);
+
+    // 4. Pull Products
+    const prodSnap = await getDocs(collection(db, 'users', userId, 'products'));
+    const remoteProducts: ProductRecord[] = [];
+    prodSnap.forEach((docSnap) => {
+      remoteProducts.push(docSnap.data() as ProductRecord);
+    });
+
+    const localProducts = getSavedProducts();
+    const prodMap = new Map(localProducts.map((p) => [p.id, p]));
+    remoteProducts.forEach((rProd) => {
+      prodMap.set(rProd.id, rProd);
+    });
+    const mergedProducts = Array.from(prodMap.values());
+    memoryProducts = mergedProducts;
+    localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(mergedProducts));
+    idbSet(STORAGE_KEY_PRODUCTS, mergedProducts);
+
+    // Replay any pending local mutations
+    await replayPendingSyncQueue(userId);
+
+    notifySyncListeners({ status: 'synced', lastSyncedAt: new Date().toISOString() });
+
+    try {
+      window.dispatchEvent(
+        new CustomEvent('bizcore:data-restored', {
+          detail: {
+            restoredStats: {
+              invoicesRestored: mergedInvoices.length,
+              customersRestored: mergedCustomers.length,
+              productsRestored: mergedProducts.length,
+            },
+          },
+        })
+      );
+    } catch {}
+
+    return {
+      invoices: mergedInvoices.length,
+      customers: mergedCustomers.length,
+      products: mergedProducts.length,
+    };
+  } catch (err: any) {
+    console.error('Firestore full sync error:', err);
+    notifySyncListeners({ status: 'error', errorMessage: err?.message });
+    return { invoices: 0, customers: 0, products: 0 };
+  }
+}
+
+// Global Online/Offline Event Listeners
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    notifySyncListeners({ status: 'syncing' });
+    replayPendingSyncQueue();
+  });
+  window.addEventListener('offline', () => {
+    notifySyncListeners({ status: 'offline' });
+  });
+}
+
 export function getSavedInvoices(businessId?: string): SavedInvoice[] {
   let all: SavedInvoice[] = [];
   if (memoryInvoices) {
@@ -557,6 +1013,10 @@ export function saveInvoice(invoice: SavedInvoice): SavedInvoice[] {
     memoryInvoices = updated;
     localStorage.setItem(STORAGE_KEY_INVOICES, JSON.stringify(updated));
     idbSet(STORAGE_KEY_INVOICES, updated);
+
+    // Background push to Firestore
+    syncInvoiceToFirestore(prepared);
+
     return updated;
   } catch (err) {
     console.error('Error saving invoice:', err);
@@ -571,10 +1031,58 @@ export function deleteInvoice(id: string): SavedInvoice[] {
     memoryInvoices = updated;
     localStorage.setItem(STORAGE_KEY_INVOICES, JSON.stringify(updated));
     idbSet(STORAGE_KEY_INVOICES, updated);
+
+    // Background delete in Firestore
+    deleteInvoiceFromFirestore(id);
+
     return updated;
   } catch (err) {
     console.error('Error deleting invoice:', err);
     return getSavedInvoices();
+  }
+}
+
+export function cancelInvoice(
+  invoiceId: string,
+  reason: string = 'Invoice cancelled by user'
+): { updatedInvoice?: SavedInvoice; all: SavedInvoice[] } {
+  try {
+    const all = getSavedInvoices();
+    const target = all.find((inv) => inv.id === invoiceId);
+    if (!target) return { all };
+
+    target.status = 'CANCELLED';
+    target.cancellationReason = reason;
+    target.cancelledAt = new Date().toISOString();
+    target.updatedAt = new Date().toISOString();
+
+    const updated = saveInvoice(target);
+    return { updatedInvoice: target, all: updated };
+  } catch (err) {
+    console.error('Error cancelling invoice:', err);
+    return { all: getSavedInvoices() };
+  }
+}
+
+export function returnInvoice(
+  invoiceId: string,
+  reason: string = 'Sales return goods accepted'
+): { updatedInvoice?: SavedInvoice; all: SavedInvoice[] } {
+  try {
+    const all = getSavedInvoices();
+    const target = all.find((inv) => inv.id === invoiceId);
+    if (!target) return { all };
+
+    target.status = 'RETURNED';
+    target.cancellationReason = reason;
+    target.cancelledAt = new Date().toISOString();
+    target.updatedAt = new Date().toISOString();
+
+    const updated = saveInvoice(target);
+    return { updatedInvoice: target, all: updated };
+  } catch (err) {
+    console.error('Error returning invoice:', err);
+    return { all: getSavedInvoices() };
   }
 }
 
@@ -623,8 +1131,18 @@ export function recordInvoicePayment(
 export function generateNextInvoiceNo(): string {
   const all = getSavedInvoices();
   const year = new Date().getFullYear();
-  const count = all.length + 1;
-  return `INV-${year}-${String(count).padStart(4, '0')}`;
+  // Safe sequential number allocation preventing collision with existing formatted invoices
+  const existingNumbers = new Set(
+    all.map((inv) => inv.invoiceNo?.trim().toUpperCase()).filter(Boolean)
+  );
+
+  let nextSeq = all.length + 1;
+  let candidate = `INV-${year}-${String(nextSeq).padStart(4, '0')}`;
+  while (existingNumbers.has(candidate)) {
+    nextSeq++;
+    candidate = `INV-${year}-${String(nextSeq).padStart(4, '0')}`;
+  }
+  return candidate;
 }
 
 export function getSavedCustomers(businessId?: string): CustomerRecord[] {
@@ -680,6 +1198,10 @@ export function saveCustomer(customer: CustomerRecord): CustomerRecord[] {
     memoryCustomers = updated;
     localStorage.setItem(STORAGE_KEY_CUSTOMERS, JSON.stringify(updated));
     idbSet(STORAGE_KEY_CUSTOMERS, updated);
+
+    // Background push to Firestore
+    syncCustomerToFirestore(prepared);
+
     return updated;
   } catch (err) {
     console.error('Error saving customer:', err);
@@ -694,6 +1216,10 @@ export function deleteCustomer(id: string): CustomerRecord[] {
     memoryCustomers = updated;
     localStorage.setItem(STORAGE_KEY_CUSTOMERS, JSON.stringify(updated));
     idbSet(STORAGE_KEY_CUSTOMERS, updated);
+
+    // Background delete in Firestore
+    deleteCustomerFromFirestore(id);
+
     return updated;
   } catch (err) {
     console.error('Error deleting customer:', err);
@@ -754,6 +1280,10 @@ export function saveProduct(product: ProductRecord): ProductRecord[] {
     memoryProducts = updated;
     localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(updated));
     idbSet(STORAGE_KEY_PRODUCTS, updated);
+
+    // Background push to Firestore
+    syncProductToFirestore(prepared);
+
     return updated;
   } catch (err) {
     console.error('Error saving product:', err);
@@ -768,10 +1298,55 @@ export function deleteProduct(id: string): ProductRecord[] {
     memoryProducts = updated;
     localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(updated));
     idbSet(STORAGE_KEY_PRODUCTS, updated);
+
+    // Background delete in Firestore
+    deleteProductFromFirestore(id);
+
     return updated;
   } catch (err) {
     console.error('Error deleting product:', err);
     return getSavedProducts();
+  }
+}
+
+export function adjustProductStock(
+  productId: string,
+  adjustment: {
+    type: 'stock_in' | 'stock_out' | 'damage' | 'audit';
+    qty: number;
+    reason: string;
+  }
+): { updatedProduct?: ProductRecord; all: ProductRecord[] } {
+  try {
+    const all = getSavedProducts();
+    const target = all.find((p) => p.id === productId);
+    if (!target) return { all };
+
+    const currentQty = target.stockQty || 0;
+    let newQty = currentQty;
+    if (adjustment.type === 'stock_in') {
+      newQty = currentQty + adjustment.qty;
+    } else if (adjustment.type === 'stock_out' || adjustment.type === 'damage') {
+      newQty = Math.max(0, currentQty - adjustment.qty);
+    } else if (adjustment.type === 'audit') {
+      newQty = Math.max(0, adjustment.qty);
+    }
+
+    target.stockQty = newQty;
+    const historyEntry = {
+      id: `adj_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      date: new Date().toISOString(),
+      type: adjustment.type,
+      qty: adjustment.qty,
+      reason: adjustment.reason,
+    };
+    target.stockAdjustments = [...(target.stockAdjustments || []), historyEntry];
+
+    const updatedList = saveProduct(target);
+    return { updatedProduct: target, all: updatedList };
+  } catch (err) {
+    console.error('Error adjusting stock:', err);
+    return { all: getSavedProducts() };
   }
 }
 

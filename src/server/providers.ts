@@ -17,130 +17,15 @@ export interface EmailProvider {
   sendEmail(to: string, otp: string): Promise<{ success: boolean; error?: string }>;
 }
 
-/**
- * Temporary In-Memory Storage Record for Mock OTP Verification Codes
- */
-export interface MockOtpRecord {
-  target: string;
-  otp: string;
-  channel: 'sms' | 'email';
-  createdAt: number;
-  expiresAt: number;
-  attempts: number;
-  verified: boolean;
-}
+import {
+  mockOtpMemoryStore,
+  MockOtpProvider,
+  mockOtpProvider,
+  type MockOtpRecord,
+} from './otpRouter.ts';
 
-/**
- * In-memory temporary storage object for verification codes for testing purposes.
- * Ensures the frontend AuthModal can successfully verify them without an external SMS provider.
- */
-export const mockOtpMemoryStore: Record<string, MockOtpRecord> = {};
-
-/**
- * Mock OTP Provider that saves verification codes in the temporary memory object.
- */
-export class MockOtpProvider implements SmsProvider, EmailProvider {
-  name = 'MockOtpProvider';
-
-  /**
-   * Saves SMS verification code in the temporary memory object.
-   */
-  async sendSms(to: string, otp: string): Promise<{ success: boolean; error?: string }> {
-    const cleanPhone = to.replace(/\D/g, '').slice(-10);
-    mockOtpMemoryStore[`sms:${cleanPhone}`] = {
-      target: cleanPhone,
-      otp: otp.trim(),
-      channel: 'sms',
-      createdAt: Date.now(),
-      expiresAt: Date.now() + 15 * 60 * 1000,
-      attempts: 0,
-      verified: false,
-    };
-    console.log(`[MockOtpProvider] SMS OTP saved in memory store for ${cleanPhone}: ${otp}`);
-    return { success: true };
-  }
-
-  /**
-   * Saves Email verification code in the temporary memory object.
-   */
-  async sendEmail(to: string, otp: string): Promise<{ success: boolean; error?: string }> {
-    const cleanEmail = to.trim().toLowerCase();
-    mockOtpMemoryStore[`email:${cleanEmail}`] = {
-      target: cleanEmail,
-      otp: otp.trim(),
-      channel: 'email',
-      createdAt: Date.now(),
-      expiresAt: Date.now() + 15 * 60 * 1000,
-      attempts: 0,
-      verified: false,
-    };
-    console.log(`[MockOtpProvider] Email OTP saved in memory store for ${cleanEmail}: ${otp}`);
-    return { success: true };
-  }
-
-  /**
-   * Retrieves active verification code from memory.
-   */
-  getVerificationCode(target: string, channel: 'sms' | 'email' = 'sms'): string | null {
-    const cleanTarget = channel === 'sms' ? target.replace(/\D/g, '').slice(-10) : target.trim().toLowerCase();
-    const record = mockOtpMemoryStore[`${channel}:${cleanTarget}`];
-    if (record && Date.now() <= record.expiresAt) {
-      return record.otp;
-    }
-    return null;
-  }
-
-  /**
-   * Verifies the code against the temporary memory object.
-   */
-  verifyCode(target: string, inputOtp: string, channel: 'sms' | 'email' = 'sms'): {
-    success: boolean;
-    error?: string;
-  } {
-    const cleanTarget = channel === 'sms' ? target.replace(/\D/g, '').slice(-10) : target.trim().toLowerCase();
-    const cleanInput = inputOtp.trim();
-    const record = mockOtpMemoryStore[`${channel}:${cleanTarget}`];
-
-    // Testing universal code fallback
-    if (cleanInput === '123456') {
-      if (record) record.verified = true;
-      return { success: true };
-    }
-
-    if (!record) {
-      return { success: false, error: 'No verification code found for this recipient.' };
-    }
-
-    if (Date.now() > record.expiresAt) {
-      delete mockOtpMemoryStore[`${channel}:${cleanTarget}`];
-      return { success: false, error: 'Verification code has expired.' };
-    }
-
-    record.attempts++;
-    if (record.attempts > 5) {
-      delete mockOtpMemoryStore[`${channel}:${cleanTarget}`];
-      return { success: false, error: 'Maximum verification attempts exceeded.' };
-    }
-
-    if (record.otp === cleanInput) {
-      record.verified = true;
-      return { success: true };
-    }
-
-    return { success: false, error: 'Invalid verification code.' };
-  }
-
-  /**
-   * Clears memory object (useful for test resets).
-   */
-  clear(): void {
-    for (const key of Object.keys(mockOtpMemoryStore)) {
-      delete mockOtpMemoryStore[key];
-    }
-  }
-}
-
-export const mockOtpProvider = new MockOtpProvider();
+export { mockOtpMemoryStore, MockOtpProvider, mockOtpProvider };
+export type { MockOtpRecord };
 
 // 1. Fast2SMS Provider (Commonly used in India for transactional OTPs)
 export class Fast2SmsProvider implements SmsProvider {
